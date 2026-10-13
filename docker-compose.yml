@@ -1,73 +1,57 @@
-# Web-App:  docker compose up --build        → http://<rechner>:8000
-# CLI:      IMAGE=./bild.jpg docker compose run --rm parser-cli   → ./out.json
+# Dev mit Live-Reload:  docker compose up -d        → http://<rechner>:8000
+#   Frontend (Vite-HMR) und Backend (nest --watch) laufen direkt aus ./app.
+#   Parser-Änderungen brauchen weiterhin: docker compose up -d --build parser
+# Prod:                 docker compose -f compose.prod.yaml up -d --build
+# CLI:                  IMAGE=./bild.jpg docker compose run --rm parser-cli   → ./out.json
 
-x-parser: &parser
-  build: ./parser
-  image: bowling-parser:local
-  depends_on:
-    ollama:
-      condition: service_healthy
-  environment: &parser-env
-    OLLAMA_URL: http://ollama:11434
-    MODEL: ${MODEL:-qwen2.5vl:7b}
-    MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+include:
+  - compose.base.yaml
+
+x-node: &node
+  build:
+    context: ./app
+    dockerfile: Dockerfile.dev
+  volumes:
+    - ./app:/app
+    - node_modules:/app/node_modules
+    - api_node_modules:/app/api/node_modules
+    - web_node_modules:/app/web/node_modules
+    - ./data:/data
 
 services:
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-models:/root/.ollama
-    environment:
-      OLLAMA_KEEP_ALIVE: "10m"
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
+  # Installiert Abhängigkeiten, bevor api und web starten
+  deps:
+    <<: *node
+    command: npm install --no-audit --no-fund
 
-  # HTTP-Dienst für die App (POST /parse), nur intern erreichbar
-  parser:
-    <<: *parser
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-
-  app:
-    build: ./app
-    depends_on:
-      parser:
-        condition: service_healthy
-    user: "${UID:-1000}:${GID:-1000}"
-    ports:
-      - "0.0.0.0:8000:8000"
+  api:
+    <<: *node
+    command: sh -c "npm run -w api prisma:deploy && npm run -w api start:dev"
     environment:
       DATABASE_URL: file:/data/bowling.db
       DATA_DIR: /data
       PARSER_URL: http://parser:8080
-      WEB_DIST: /app/web/dist
-    volumes:
-      - ./data:/data
+      PORT: "3000"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      parser:
+        condition: service_healthy
 
-  # Einzelbild per Kommandozeile, schreibt ./out.json
-  parser-cli:
-    <<: *parser
-    profiles: ["cli"]
-    command: ["python", "parse.py"]
-    user: "${UID:-1000}:${GID:-1000}"
+  web:
+    <<: *node
+    command: npm run -w web dev
     environment:
-      <<: *parser-env
-      INPUT: /data/input.jpg
-      OUTPUT: /out/out.json
-    volumes:
-      - type: bind
-        source: ${IMAGE:-./input.jpg}
-        target: /data/input.jpg
-        read_only: true
-        bind:
-          create_host_path: false
-      - ./:/out
+      API_TARGET: http://api:3000
+    ports:
+      - "0.0.0.0:8000:5173"
+    depends_on:
+      deps:
+        condition: service_completed_successfully
+      api:
+        condition: service_started
 
 volumes:
-  ollama-models:
+  node_modules:
+  api_node_modules:
+  web_node_modules:

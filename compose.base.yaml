@@ -1,0 +1,56 @@
+# Gemeinsame Dienste für Dev (docker-compose.yml) und Prod (compose.prod.yaml)
+
+x-parser: &parser
+  build: ./parser
+  image: bowling-parser:local
+  depends_on:
+    ollama:
+      condition: service_healthy
+  environment: &parser-env
+    OLLAMA_URL: http://ollama:11434
+    MODEL: ${MODEL:-qwen2.5vl:7b}
+    MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "10m"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # HTTP-Dienst für die App (POST /parse), nur intern erreichbar
+  parser:
+    <<: *parser
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Einzelbild per Kommandozeile, schreibt ./out.json
+  parser-cli:
+    <<: *parser
+    profiles: ["cli"]
+    command: ["python", "parse.py"]
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      <<: *parser-env
+      INPUT: /data/input.jpg
+      OUTPUT: /out/out.json
+    volumes:
+      - type: bind
+        source: ${IMAGE:-./input.jpg}
+        target: /data/input.jpg
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./:/out
+
+volumes:
+  ollama-models:

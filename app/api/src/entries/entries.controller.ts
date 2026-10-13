@@ -35,6 +35,11 @@ export class EntriesController {
     return this.entries.create(file.buffer);
   }
 
+  @Post(':id/reprocess')
+  reprocess(@Param('id', ParseIntPipe) id: number) {
+    return this.entries.reprocess(id);
+  }
+
   @Get(':id/image')
   async image(@Param('id', ParseIntPipe) id: number, @Res() res: Response) {
     const { path, mime } = await this.entries.image(id);

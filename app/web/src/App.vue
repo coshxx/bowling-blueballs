@@ -30,6 +30,23 @@ async function load() {
   }
 }
 
+const FINISHED: EntryStatus[] = ['done', 'uncertain', 'failed'];
+const reprocessing = ref<number | null>(null);
+const reprocessError = ref<{ id: number; message: string } | null>(null);
+
+async function reprocess(entry: Entry) {
+  reprocessing.value = entry.id;
+  reprocessError.value = null;
+  try {
+    await api.reprocess(entry.id);
+    await load();
+  } catch (e) {
+    reprocessError.value = { id: entry.id, message: (e as Error).message };
+  } finally {
+    reprocessing.value = null;
+  }
+}
+
 async function upload() {
   const file = fileInput.value?.files?.[0];
   if (!file) {
@@ -84,7 +101,18 @@ onMounted(load);
           <br />
           <span class="badge">{{ STATUS_LABELS[entry.status] }}</span>
         </div>
+        <button
+          v-if="FINISHED.includes(entry.status)"
+          type="button"
+          class="secondary outline reprocess"
+          :aria-busy="reprocessing === entry.id"
+          :disabled="reprocessing !== null"
+          @click="reprocess(entry)"
+        >
+          Neu analysieren
+        </button>
       </div>
+      <p v-if="reprocessError?.id === entry.id" class="msg-error">{{ reprocessError.message }}</p>
 
       <ScoreTable v-if="entry.result" :players="entry.result.players" />
 
@@ -117,6 +145,12 @@ onMounted(load);
   margin-bottom: 1rem;
   align-items: center;
   gap: 1rem;
+}
+.reprocess {
+  margin-left: auto;
+  width: auto;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
 }
 .thumb {
   width: 120px;

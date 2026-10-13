@@ -24,4 +24,5 @@ export const api = {
     body.append('image', file);
     return check<Entry>(await fetch('/api/entries', { method: 'POST', body }));
   },
+  reprocess: async (id: number) => check<Entry>(await fetch(`/api/entries/${id}/reprocess`, { method: 'POST' })),
 };

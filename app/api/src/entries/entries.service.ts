@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, UnsupportedMediaTypeException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnsupportedMediaTypeException } from '@nestjs/common';
 import type { Entry } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -57,6 +57,23 @@ export class EntriesService {
     const entry = await this.prisma.entry.create({ data: { imageFile, imageType: type.mime } });
     this.worker.wake();
     return toDto(entry);
+  }
+
+  /** Reiht einen abgeschlossenen Eintrag erneut ein; das alte Ergebnis wird verworfen. */
+  async reprocess(id: number): Promise<EntryDto> {
+    const { count } = await this.prisma.entry.updateMany({
+      where: { id, status: { in: ['done', 'uncertain', 'failed'] } },
+      data: { status: 'pending', result: null, problems: null, error: null, processedAt: null },
+    });
+    if (count === 0) {
+      const exists = await this.prisma.entry.findUnique({ where: { id }, select: { id: true } });
+      if (!exists) {
+        throw new NotFoundException('Eintrag nicht gefunden');
+      }
+      throw new ConflictException('Der Eintrag wartet bereits oder wird gerade verarbeitet.');
+    }
+    this.worker.wake();
+    return toDto(await this.prisma.entry.findUniqueOrThrow({ where: { id } }));
   }
 
   async image(id: number): Promise<{ path: string; mime: string }> {

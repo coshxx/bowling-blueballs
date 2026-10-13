@@ -9,6 +9,8 @@ einen Parse-Auftrag gleichzeitig ans Modell. Die Warteschlange liegt beim Aufruf
 import base64
 import json
 import os
+import signal
+import sys
 import threading
 import urllib.error
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -76,5 +78,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Als PID 1 im Container ignoriert Python SIGTERM sonst, docker stop würde 10 s warten
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     log(f"Parser-Dienst lauscht auf Port {PORT}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

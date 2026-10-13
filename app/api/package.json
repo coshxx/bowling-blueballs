@@ -4,8 +4,9 @@
   "scripts": {
     "postinstall": "prisma generate",
     "build": "nest build",
+    "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma generate && prisma migrate deploy"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.0",

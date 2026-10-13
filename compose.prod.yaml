@@ -1,0 +1,22 @@
+# Prod-artig (Nest liefert den Vue-Build aus):  docker compose -f compose.prod.yaml up -d --build
+# Vorher die Dev-Umgebung stoppen, beide nutzen Port 8000 und ./data.
+
+include:
+  - compose.base.yaml
+
+services:
+  app:
+    build: ./app
+    depends_on:
+      parser:
+        condition: service_healthy
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "0.0.0.0:8000:8000"
+    environment:
+      DATABASE_URL: file:/data/bowling.db
+      DATA_DIR: /data
+      PARSER_URL: http://parser:8080
+      WEB_DIST: /app/web/dist
+    volumes:
+      - ./data:/data
