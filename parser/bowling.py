@@ -89,27 +89,62 @@ def parse_symbols(symbols: str) -> list[list[int]]:
     return frames
 
 
-def repair(symbols: str, shown: list[int]) -> list[list[int]] | None:
-    """Sucht Varianten mit genau einem eingefügten, gelöschten oder ersetzten Symbol, die zu
-    allen angezeigten Zwischenständen passen. Ergebnis nur, wenn das eindeutig ist."""
-    seq = symbols.replace(" ", "").upper()
-    alphabet = "X/-123456789"
-    candidates = set()
+ALPHABET = "X/-123456789"
+
+
+def frames_to_symbols(frames: list[list[int]]) -> str:
+    """Schreibweise der Anzeige: X = Strike, / = Spare, - = 0 (z. B. [[10], [7, 3]] -> 'X7/')."""
+    out = []
+    for frame in frames:
+        open_pins = 0  # 0 = frisch aufgestellt, sonst noch stehende Pins nach dem ersten Wurf
+        for roll in frame:
+            if open_pins == 0:
+                out.append("X" if roll == 10 else "-" if roll == 0 else str(roll))
+                open_pins = 0 if roll == 10 else 10 - roll
+            else:
+                out.append("/" if roll == open_pins else "-" if roll == 0 else str(roll))
+                open_pins = 0
+    return "".join(out)
+
+
+def _single_edits(seq: str) -> set[str]:
+    """Alle Varianten mit genau einem eingefügten, gelöschten oder ersetzten Symbol."""
+    out = set()
     for i in range(len(seq) + 1):
-        for ch in alphabet:
-            candidates.add(seq[:i] + ch + seq[i:])
+        for ch in ALPHABET:
+            out.add(seq[:i] + ch + seq[i:])
         if i < len(seq):
-            candidates.add(seq[:i] + seq[i + 1:])
-            for ch in alphabet:
-                candidates.add(seq[:i] + ch + seq[i + 1:])
-    found = set()
-    for cand in candidates:
-        try:
-            frames = parse_symbols(cand)
-        except ValueError:
-            continue
-        if matches_scores(frames, shown):
-            found.add(tuple(tuple(f) for f in frames))
-    if len(found) == 1:
-        return [list(f) for f in found.pop()]
+            out.add(seq[:i] + seq[i + 1:])
+            for ch in ALPHABET:
+                out.add(seq[:i] + ch + seq[i + 1:])
+    return out
+
+
+def repair(symbols: str, shown: list[int], max_edits: int = 2) -> list[list[int]] | None:
+    """Sucht die Variante mit den wenigsten Symboländerungen (bis max_edits), die zu allen
+    angezeigten Zwischenständen passt. Ergebnis nur, wenn sie auf der kleinsten Stufe
+    eindeutig ist – sonst None (z. B. übersehener offener Frame: 8 1 oder 7 2?)."""
+    seq = symbols.replace(" ", "").upper()
+    seen = {seq}
+    frontier = {seq}
+    for _ in range(max_edits):
+        candidates = set()
+        for s in frontier:
+            candidates |= _single_edits(s)
+        candidates -= seen
+        seen |= candidates
+        found = set()
+        for cand in candidates:
+            try:
+                frames = parse_symbols(cand)
+            except ValueError:
+                continue
+            # Nur Schreibweisen zulassen, die so auf der Anzeige stehen könnten ("28" statt "2/" nicht)
+            if frames_to_symbols(frames) == cand and matches_scores(frames, shown):
+                found.add(tuple(tuple(f) for f in frames))
+        if len(found) == 1:
+            return [list(f) for f in found.pop()]
+        if found:
+            return None
+        frontier = candidates
     return None

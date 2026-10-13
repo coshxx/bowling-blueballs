@@ -8,6 +8,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from typing import NamedTuple
 
 from bowling import matches_scores, parse_symbols, repair, running_scores
 
@@ -97,35 +98,43 @@ def ask_model(image_b64: str, temperature: float) -> dict:
         return json.loads(json.load(r)["message"]["content"])
 
 
-def check(raw: dict) -> tuple[dict, list[str]]:
-    """Teilt die Transkription in Frames auf und prüft sie gegen die angezeigten Zwischenstände."""
-    players, problems = [], []
-    for p in raw["players"]:
-        name = p["name"].strip()
-        shown = p["scores"]
-        try:
-            frames, error = parse_symbols(p["rolls"]), None
-        except ValueError as e:
-            frames, error = None, str(e)
-        if frames is None or not matches_scores(frames, shown):
-            fixed = repair(p["rolls"], shown)
-            if fixed is not None:
-                log(f"  {name}: Transkription korrigiert (eine Abweichung, eindeutig über Zwischenstände)")
-                frames = fixed
-            elif frames is None:
-                problems.append(f"{name}: {error}")
-                continue
-            else:
-                computed = running_scores(frames)
-                if len(shown) > len(computed):
-                    problems.append(f"{name}: {len(shown)} Zwischenstände, aber nur {len(computed)} Frames")
-                for i, (s, calc) in enumerate(zip(shown, computed), 1):
-                    if s != calc:
-                        problems.append(f"{name}: Frame {i} angezeigt {s}, berechnet {calc}")
-        players.append({"name": name, "frames": frames})
-    if not players:
-        problems.append("keine Spieler erkannt")
-    return {"players": players}, problems
+class PlayerResult(NamedTuple):
+    name: str
+    frames: list[list[int]] | None  # None = Transkription nicht verwertbar
+    problems: list[str]
+
+    def rank(self) -> tuple[bool, int]:
+        """Kleiner = besser: erst verwertbare Frames, dann wenige Abweichungen."""
+        return (self.frames is None, len(self.problems))
+
+
+def check_player(p: dict) -> PlayerResult:
+    """Teilt die Transkription eines Spielers in Frames auf und prüft sie gegen die
+    angezeigten Zwischenstände; korrigiert sie wenn möglich eindeutig."""
+    name = p["name"].strip()
+    shown = p["scores"]
+    try:
+        frames, error = parse_symbols(p["rolls"]), None
+    except ValueError as e:
+        frames, error = None, str(e)
+    if frames is not None and matches_scores(frames, shown):
+        return PlayerResult(name, frames, [])
+
+    fixed = repair(p["rolls"], shown)
+    if fixed is not None:
+        log(f"  {name}: Transkription korrigiert (eindeutig über Zwischenstände)")
+        return PlayerResult(name, fixed, [])
+    if frames is None:
+        return PlayerResult(name, None, [f"{name}: {error}"])
+
+    problems = []
+    computed = running_scores(frames)
+    if len(shown) > len(computed):
+        problems.append(f"{name}: {len(shown)} Zwischenstände, aber nur {len(computed)} Frames")
+    for i, (s, calc) in enumerate(zip(shown, computed), 1):
+        if s != calc:
+            problems.append(f"{name}: Frame {i} angezeigt {s}, berechnet {calc}")
+    return PlayerResult(name, frames, problems)
 
 
 def format_json(data: dict) -> str:
@@ -140,11 +149,12 @@ class ParseError(Exception):
 
 
 def parse_image(image_b64: str) -> tuple[dict, list[str]]:
-    """Liest das Bild bis zu MAX_ATTEMPTS-mal aus. Liefert das beste Ergebnis und die
-    verbliebenen Abweichungen (leer = alle Zwischenstände stimmen)."""
+    """Liest das Bild bis zu MAX_ATTEMPTS-mal aus und übernimmt für jeden Spieler die beste
+    Transkription aus allen Versuchen. Liefert das Ergebnis und die verbliebenen
+    Abweichungen (leer = alle Zwischenstände stimmen)."""
     ensure_model()
 
-    best: tuple[dict, list[str]] | None = None
+    best: list[PlayerResult] | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         temperature = 0.0 if attempt == 1 else 0.5
         log(f"Versuch {attempt}/{MAX_ATTEMPTS} mit {MODEL} (temperature={temperature}) ...")
@@ -152,21 +162,33 @@ def parse_image(image_b64: str) -> tuple[dict, list[str]]:
         try:
             raw = ask_model(image_b64, temperature)
             log(f"  Antwort nach {time.time() - start:.0f}s: {json.dumps(raw, ensure_ascii=False)}")
-            result, problems = check(raw)
+            players = [check_player(p) for p in raw["players"]]
         except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as e:
             log(f"  Unbrauchbare Antwort: {e!r}")
             continue
-        if not problems:
+        if not players:
+            log("  Keine Spieler erkannt.")
+            continue
+
+        # Spieler werden über ihre Position zugeordnet, Namen können zwischen Versuchen abweichen
+        if best is None:
+            best = players
+        elif len(players) != len(best):
+            log(f"  {len(players)} statt {len(best)} Spieler erkannt, Versuch wird nicht übernommen.")
+        else:
+            best = [new if new.rank() < old.rank() else old for old, new in zip(best, players)]
+
+        open_problems = [p for r in best for p in r.problems]
+        if not open_problems:
             log("  Alle Zwischenstände stimmen.")
-            return result, problems
-        for p in problems:
-            log(f"  Problem: {p}")
-        if best is None or len(problems) < len(best[1]):
-            best = (result, problems)
+            break
+        for p in open_problems:
+            log(f"  Offen: {p}")
 
     if best is None:
         raise ParseError("Kein verwertbares Ergebnis vom Modell")
-    return best
+    result = {"players": [{"name": r.name, "frames": r.frames} for r in best if r.frames is not None]}
+    return result, [p for r in best for p in r.problems]
 
 
 def main() -> int:
