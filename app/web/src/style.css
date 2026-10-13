@@ -1,12 +1,42 @@
 :root {
   --status-pending: #6b7280;
   --status-running: #2563eb;
-  --status-done: #16a34a;
-  --status-uncertain: #d97706;
+  --status-review: #d97706;
+  --status-approved: #16a34a;
   --status-failed: #dc2626;
 }
 
+main.container,
+header.container {
+  max-width: 1100px;
+}
+
 main.container {
-  max-width: 960px;
-  padding-top: 1.5rem;
+  padding-top: 1rem;
+}
+
+.msg-ok {
+  color: var(--status-approved);
+}
+.msg-error {
+  color: var(--status-failed);
+}
+.msg-warn {
+  color: var(--status-review);
+}
+
+/* Kompakte Buttons für Aktionen in Listen und Karten */
+button.small,
+a[role='button'].small {
+  width: auto;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.875rem;
+  margin-bottom: 0;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
 }

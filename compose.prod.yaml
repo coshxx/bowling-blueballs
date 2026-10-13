@@ -1,5 +1,7 @@
 # Prod-artig (Nest liefert den Vue-Build aus):  docker compose -f compose.prod.yaml up -d --build
 # Vorher die Dev-Umgebung stoppen, beide nutzen Port 8000 und ./data.
+# Benötigt eine .env mit SESSION_SECRET=<lange Zufallszeichenkette> (z. B. openssl rand -hex 32)
+# und optional ADMIN_USERS=name1,name2 (Standard: cosh).
 
 include:
   - compose.base.yaml
@@ -18,5 +20,7 @@ services:
       DATA_DIR: /data
       PARSER_URL: http://parser:8080
       WEB_DIST: /app/web/dist
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET fehlt in .env}
+      ADMIN_USERS: ${ADMIN_USERS:-cosh}
     volumes:
       - ./data:/data

@@ -82,8 +82,10 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
       await this.prisma.entry.update({
         where: { id },
         data: {
-          status: res.status === 'ok' ? 'done' : 'uncertain',
+          status: 'review',
+          uncertain: res.status === 'uncertain',
           result: JSON.stringify(res.result),
+          scores: JSON.stringify(res.scores ?? []),
           problems: res.problems.length ? JSON.stringify(res.problems) : null,
           error: null,
           processedAt: new Date(),

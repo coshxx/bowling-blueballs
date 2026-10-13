@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { frameSymbols, runningScores } from '../bowling';
-import type { Player } from '../types';
+import type { ResultPlayer } from '../types';
 
-const props = defineProps<{ players: Player[] }>();
+const props = defineProps<{ players: ResultPlayer[] }>();
 
 const rows = computed(() =>
   props.players.map((p) => {
@@ -31,7 +31,7 @@ const rows = computed(() =>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="row in rows" :key="row.name">
+        <tr v-for="(row, idx) in rows" :key="idx">
           <th scope="row">{{ row.name }}</th>
           <td v-for="(f, i) in row.frames" :key="i">
             <div class="rolls">

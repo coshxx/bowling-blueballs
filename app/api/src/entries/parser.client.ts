@@ -6,6 +6,8 @@ export interface ParserResponse {
   status: 'ok' | 'uncertain';
   result: unknown;
   problems: string[];
+  /** Gelesene Zwischenstände pro Spieler, gleiche Reihenfolge wie result.players */
+  scores: number[][];
 }
 
 export class ParserError extends Error {}

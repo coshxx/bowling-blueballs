@@ -32,6 +32,8 @@ services:
       DATA_DIR: /data
       PARSER_URL: http://parser:8080
       PORT: "3000"
+      SESSION_SECRET: dev-secret
+      ADMIN_USERS: ${ADMIN_USERS:-cosh}
     depends_on:
       deps:
         condition: service_completed_successfully
