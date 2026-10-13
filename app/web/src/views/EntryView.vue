@@ -6,7 +6,7 @@ import { frameError, frameSymbols, isComplete, normalizeAlias, parseFrame, runni
 import ScoreTable from '../components/ScoreTable.vue';
 import { formatDate } from '../format';
 import { session } from '../session';
-import type { ApprovePlayer, Entry, Player } from '../types';
+import type { ApprovePlayer, Entry, FrameMark, Player, ResultPlayer } from '../types';
 
 const props = defineProps<{ id: number }>();
 const router = useRouter();
@@ -16,6 +16,8 @@ const NEW_PLAYER = '__new__';
 interface EditorRow {
   displayName: string;
   frameTexts: string[];
+  /** Markierungen des Parsers; fällt weg, sobald der Frame von Hand geändert wird */
+  marks: FrameMark[];
   /** Vom Modell gelesene Zwischenstände (leer bei manuell hinzugefügten Zeilen) */
   readScores: number[];
   /** Spieler-ID als String, NEW_PLAYER oder '' (noch nicht zugeordnet) */
@@ -38,15 +40,20 @@ function playerForAlias(displayName: string): Player | undefined {
   return players.value.find((p) => p.aliases.some((a) => a.alias === alias));
 }
 
-function makeRow(displayName: string, frames: number[][], readScores: number[]): EditorRow {
+function makeRow(displayName: string, frames: number[][], readScores: number[], texts?: string[], marks?: FrameMark[]): EditorRow {
   const known = playerForAlias(displayName);
   return {
     displayName,
-    frameTexts: Array.from({ length: 10 }, (_, i) => (frames[i] ? frameSymbols(frames[i]).join('') : '')),
+    frameTexts: Array.from({ length: 10 }, (_, i) => texts?.[i] ?? (frames[i] ? frameSymbols(frames[i]).join('') : '')),
+    marks: Array.from({ length: 10 }, (_, i) => marks?.[i] ?? null),
     readScores,
     mapping: known ? String(known.id) : '',
     newPlayerName: '',
   };
+}
+
+function resultRows(e: Entry): EditorRow[] {
+  return (e.result?.players ?? []).map((p: ResultPlayer, i) => makeRow(p.name, p.frames, e.scores[i] ?? [], p.texts, p.marks));
 }
 
 async function load() {
@@ -55,7 +62,7 @@ async function load() {
     players.value = await api.listPlayers(e.groupId);
     entry.value = e;
     playedOn.value = e.playedOn;
-    rows.value = (e.result?.players ?? []).map((p, i) => makeRow(p.name, p.frames, e.scores[i] ?? []));
+    rows.value = resultRows(e);
     loadError.value = null;
   } catch (err) {
     loadError.value = (err as Error).message;
@@ -67,17 +74,20 @@ const evaluated = computed(() =>
   rows.value.map((row) => {
     const frames: number[][] = [];
     let error: string | null = null;
+    let errorFrame: number | null = null;
     const lastFilled = row.frameTexts.reduce((last, t, i) => (t.trim() ? i : last), -1);
     for (let i = 0; i <= lastFilled && !error; i++) {
       const text = row.frameTexts[i].trim();
       if (!text) {
         error = `Frame ${i + 1} fehlt.`;
+        errorFrame = i;
         break;
       }
       try {
         frames.push(parseFrame(text));
       } catch (e) {
         error = `Frame ${i + 1}: ${(e as Error).message}`;
+        errorFrame = i;
       }
     }
     error ??= frameError(frames);
@@ -89,6 +99,7 @@ const evaluated = computed(() =>
     return {
       frames,
       error,
+      errorFrame,
       mappingError,
       running,
       complete: !error && isComplete(frames),
@@ -100,6 +111,12 @@ const evaluated = computed(() =>
 const canSubmit = computed(
   () => editable.value && rows.value.length > 0 && evaluated.value.every((r) => !r.error && !r.mappingError) && !!playedOn.value,
 );
+
+function markTitle(mark: FrameMark): string | undefined {
+  if (mark === 'error') return 'Passt nicht zu den Zwischenständen – bitte korrigieren';
+  if (mark === 'unsure') return 'Nicht eindeutig lesbar – bitte mit dem Foto vergleichen';
+  return undefined;
+}
 
 function onMappingChange(row: EditorRow) {
   if (row.mapping === NEW_PLAYER && !row.newPlayerName) {
@@ -146,7 +163,7 @@ async function unapprove() {
   submitError.value = null;
   try {
     entry.value = await api.unapprove(entry.value.id);
-    rows.value = (entry.value.result?.players ?? []).map((p, i) => makeRow(p.name, p.frames, entry.value!.scores[i] ?? []));
+    rows.value = resultRows(entry.value);
   } catch (e) {
     submitError.value = (e as Error).message;
   } finally {
@@ -248,6 +265,12 @@ void load();
                     <input
                       v-model="row.frameTexts[i - 1]"
                       class="frame-input"
+                      :class="{
+                        'mark-error': row.marks[i - 1] === 'error' || evaluated[idx].errorFrame === i - 1,
+                        'mark-unsure': row.marks[i - 1] === 'unsure',
+                      }"
+                      :title="markTitle(row.marks[i - 1])"
+                      @input="row.marks[i - 1] = null"
                       :maxlength="i === 10 ? 3 : 2"
                       :disabled="!editable"
                       :aria-label="`Frame ${i}`"
@@ -273,6 +296,11 @@ void load();
             </table>
           </div>
 
+          <small v-if="row.marks.some(Boolean)" class="marks-legend muted">
+            <span class="mark-error">rot</span> = passt nicht zu den Zwischenständen,
+            <span class="mark-unsure">gelb</span> = nicht eindeutig lesbar, bitte mit dem Foto vergleichen.
+            Die Markierung verschwindet, sobald du den Frame änderst.
+          </small>
           <small v-if="evaluated[idx].error" class="msg-error">{{ evaluated[idx].error }}</small>
           <small v-else-if="evaluated[idx].mappingError" class="msg-warn">{{ evaluated[idx].mappingError }}</small>
           <small v-else-if="!evaluated[idx].complete" class="muted">Unvollständiges Spiel – zählt nicht in die Statistik.</small>
@@ -346,6 +374,25 @@ input.frame-input {
   padding: 0.3rem;
   text-align: center;
   text-transform: uppercase;
+}
+input.frame-input.mark-error {
+  border-color: var(--status-failed);
+  box-shadow: 0 0 0 2px var(--status-failed);
+}
+input.frame-input.mark-unsure {
+  border-color: var(--status-review);
+  box-shadow: 0 0 0 2px var(--status-review);
+}
+.marks-legend {
+  display: block;
+}
+.marks-legend .mark-error {
+  color: var(--status-failed);
+  font-weight: 600;
+}
+.marks-legend .mark-unsure {
+  color: var(--status-review);
+  font-weight: 600;
 }
 .num {
   font-weight: 600;

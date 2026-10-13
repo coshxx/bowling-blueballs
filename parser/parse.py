@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 from typing import NamedTuple
 
-from bowling import matches_scores, parse_symbols, repair, running_scores
+from bowling import frame_ok, frames_to_symbols, running_scores, solve, split_symbols, symbols_to_rolls
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434")
 MODEL = os.environ.get("MODEL", "qwen2.5vl:7b")
@@ -27,6 +27,8 @@ Every player has two lines:
 
 Roll symbols: "X" = strike, "/" = spare, "-" = zero pins, digits = pins knocked down.
 A digit drawn inside a small box (split marker) is just that digit.
+"-" is a roll like any other and must not be left out: every frame without a strike has
+exactly two symbols (e.g. "9 -", "- 7", "8 /"), the 10th frame can have three.
 
 For each player (top to bottom) return:
 - "name": the player name
@@ -100,42 +102,62 @@ def ask_model(image_b64: str, temperature: float) -> dict:
 
 class PlayerResult(NamedTuple):
     name: str
-    frames: list[list[int]] | None  # None = Transkription nicht verwertbar
+    frames: list[list[int]]  # regelkonforme Frames ([] wenn die Lesung keine ergibt)
+    texts: list[str]  # 10 Frame-Texte für den Editor, notfalls die rohe (ungültige) Lesung
+    marks: list[str | None]  # pro Frame: "error" = sicher falsch, "unsure" = bitte prüfen
     problems: list[str]
     scores: list[int]  # vom Modell gelesene Zwischenstände
+    cost: float  # Abstand zwischen Lesung und Ergebnis
 
-    def rank(self) -> tuple[bool, int]:
-        """Kleiner = besser: erst verwertbare Frames, dann wenige Abweichungen."""
-        return (self.frames is None, len(self.problems))
+    def rank(self) -> tuple[int, int, float]:
+        """Kleiner = besser: erst wenige sichere Fehler, dann wenige unsichere Frames."""
+        return (self.marks.count("error"), self.marks.count("unsure"), self.cost)
+
+
+def pad(values: list, fill=None) -> list:
+    return (values + [fill] * 10)[:10]
 
 
 def check_player(p: dict) -> PlayerResult:
-    """Teilt die Transkription eines Spielers in Frames auf und prüft sie gegen die
-    angezeigten Zwischenstände; korrigiert sie wenn möglich eindeutig."""
+    """Rekonstruiert die Frames eines Spielers aus den gelesenen Zwischenständen und der
+    Wurfzeile. Klappt das nicht, kommt die rohe Lesung zurück, mit den falschen Frames markiert."""
     name = p["name"].strip()
-    shown = p["scores"]
-    try:
-        frames, error = parse_symbols(p["rolls"]), None
-    except ValueError as e:
-        frames, error = None, str(e)
-    if frames is not None and matches_scores(frames, shown):
-        return PlayerResult(name, frames, [], shown)
+    shown = [int(s) for s in p["scores"]]
+    rolls = str(p["rolls"])
 
-    fixed = repair(p["rolls"], shown)
-    if fixed is not None:
-        log(f"  {name}: Transkription korrigiert (eindeutig über Zwischenstände)")
-        return PlayerResult(name, fixed, [], shown)
-    if frames is None:
-        return PlayerResult(name, None, [f"{name}: {error}"], shown)
+    solution = solve(rolls, shown)
+    if solution is not None:
+        texts = [frames_to_symbols([f]) for f in solution.frames]
+        marks = ["unsure" if i in solution.unsure else None for i in range(len(texts))]
+        problems = []
+        if solution.unsure:
+            frames = ", ".join(str(i + 1) for i in solution.unsure)
+            problems.append(f"{name}: Frame {frames} nicht eindeutig lesbar, bitte prüfen")
+        if solution.cost:
+            log(f"  {name}: Würfe aus den Zwischenständen rekonstruiert: {' '.join(texts)}")
+        return PlayerResult(name, solution.frames, pad(texts, ""), pad(marks), problems, shown, solution.cost)
 
-    problems = []
-    computed = running_scores(frames)
-    if len(shown) > len(computed):
-        problems.append(f"{name}: {len(shown)} Zwischenstände, aber nur {len(computed)} Frames")
-    for i, (s, calc) in enumerate(zip(shown, computed), 1):
+    # Zwischenstände passen zu keiner möglichen Frame-Folge: rohe Lesung, Fehler markieren
+    texts = split_symbols(rolls)[:10]
+    marks: list[str | None] = []
+    frames: list[list[int]] = []
+    for i, text in enumerate(texts):
+        try:
+            f = symbols_to_rolls(text)
+        except ValueError:
+            f = None
+        ok = f is not None and frame_ok(f, i) and frames_to_symbols([f]) == text and len(frames) == i
+        if ok:
+            frames.append(f)
+        marks.append(None if ok else "error")
+    for i, (s, calc) in enumerate(zip(shown, running_scores(frames))):
         if s != calc:
-            problems.append(f"{name}: Frame {i} angezeigt {s}, berechnet {calc}")
-    return PlayerResult(name, frames, problems, shown)
+            marks[i] = "error"
+    for i in range(len(texts), min(len(shown), 10)):
+        marks.append("error")  # Zwischenstand ohne gelesene Würfe
+    bad = [i + 1 for i, m in enumerate(marks) if m]
+    problems = [f"{name}: Frame {', '.join(map(str, bad))} passt nicht zu den Zwischenständen"] if bad else []
+    return PlayerResult(name, frames, pad(texts, ""), pad(marks), problems, shown, float("inf") if bad else 0.0)
 
 
 def format_json(data: dict) -> str:
@@ -189,9 +211,8 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
 
     if best is None:
         raise ParseError("Kein verwertbares Ergebnis vom Modell")
-    usable = [r for r in best if r.frames is not None]
-    result = {"players": [{"name": r.name, "frames": r.frames} for r in usable]}
-    return result, [p for r in best for p in r.problems], [r.scores for r in usable]
+    result = {"players": [{"name": r.name, "frames": r.frames, "texts": r.texts, "marks": r.marks} for r in best]}
+    return result, [p for r in best for p in r.problems], [r.scores for r in best]
 
 
 def main() -> int:

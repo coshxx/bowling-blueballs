@@ -1,5 +1,8 @@
 """Umrechnung der Anzeige-Symbole (X, /, -, Ziffern) in Pinzahlen und Punkteprüfung."""
 
+from functools import lru_cache
+from typing import NamedTuple
+
 
 def symbols_to_rolls(symbols: str) -> list[int]:
     """'9/' -> [9, 1], 'X' -> [10], '-7' -> [0, 7], 'XX9' -> [10, 10, 9]."""
@@ -78,18 +81,10 @@ def running_scores(frames: list[list[int]]) -> list[int]:
     return scores
 
 
-def matches_scores(frames: list[list[int]], shown: list[int]) -> bool:
-    computed = running_scores(frames)
-    return len(shown) <= len(computed) and all(s == c for s, c in zip(shown, computed))
-
-
 def parse_symbols(symbols: str) -> list[list[int]]:
     frames = split_frames(symbols_to_rolls(symbols))
     validate_frames(frames)
     return frames
-
-
-ALPHABET = "X/-123456789"
 
 
 def frames_to_symbols(frames: list[list[int]]) -> str:
@@ -107,44 +102,148 @@ def frames_to_symbols(frames: list[list[int]]) -> str:
     return "".join(out)
 
 
-def _single_edits(seq: str) -> set[str]:
-    """Alle Varianten mit genau einem eingefügten, gelöschten oder ersetzten Symbol."""
-    out = set()
-    for i in range(len(seq) + 1):
-        for ch in ALPHABET:
-            out.add(seq[:i] + ch + seq[i:])
-        if i < len(seq):
-            out.add(seq[:i] + seq[i + 1:])
-            for ch in ALPHABET:
-                out.add(seq[:i] + ch + seq[i + 1:])
-    return out
+def frame_ok(rolls: list[int], i: int) -> bool:
+    """Ob ein einzelner Frame (i = 0..9) nach den Regeln möglich ist, auch angefangen."""
+    try:
+        validate_frames([[10]] * i + [rolls])
+    except ValueError:
+        return False
+    return True
 
 
-def repair(symbols: str, shown: list[int], max_edits: int = 2) -> list[list[int]] | None:
-    """Sucht die Variante mit den wenigsten Symboländerungen (bis max_edits), die zu allen
-    angezeigten Zwischenständen passt. Ergebnis nur, wenn sie auf der kleinsten Stufe
-    eindeutig ist – sonst None (z. B. übersehener offener Frame: 8 1 oder 7 2?)."""
+def split_symbols(symbols: str) -> list[str]:
+    """Teilt die gelesenen Symbole ohne Prüfung in Frame-Texte auf (X allein, sonst je zwei,
+    Frame 10 nimmt den Rest) – auch wenn dabei Unsinn wie "98" herauskommt."""
     seq = symbols.replace(" ", "").upper()
-    seen = {seq}
-    frontier = {seq}
-    for _ in range(max_edits):
-        candidates = set()
-        for s in frontier:
-            candidates |= _single_edits(s)
-        candidates -= seen
-        seen |= candidates
-        found = set()
-        for cand in candidates:
-            try:
-                frames = parse_symbols(cand)
-            except ValueError:
-                continue
-            # Nur Schreibweisen zulassen, die so auf der Anzeige stehen könnten ("28" statt "2/" nicht)
-            if frames_to_symbols(frames) == cand and matches_scores(frames, shown):
-                found.add(tuple(tuple(f) for f in frames))
-        if len(found) == 1:
-            return [list(f) for f in found.pop()]
-        if found:
+    texts: list[str] = []
+    i = 0
+    while i < len(seq) and len(texts) < 9:
+        n = 1 if seq[i] == "X" else 2
+        texts.append(seq[i:i + n])
+        i += n
+    if i < len(seq):
+        texts.append(seq[i:])
+    return texts
+
+
+class Solution(NamedTuple):
+    frames: list[list[int]]
+    unsure: list[int]  # Frame-Indizes (0-basiert), für die es gleich gute Alternativen gibt
+    cost: float
+
+
+# Kosten beim Abgleich mit der Lesung: das Modell lässt "-" gern weg, das kostet kaum etwas
+MISSING_DASH = 0.2
+EDIT = 1.0
+
+
+@lru_cache(maxsize=None)
+def _align(candidate: str, read: str) -> float:
+    """Editierabstand zwischen den Symbolen eines Kandidaten-Frames und einem Stück der Lesung."""
+    prev = [j * EDIT for j in range(len(read) + 1)]
+    for a in candidate:
+        skip = MISSING_DASH if a == "-" else EDIT
+        cur = [prev[0] + skip]
+        for j, b in enumerate(read, 1):
+            cur.append(min(prev[j] + skip, cur[j - 1] + EDIT, prev[j - 1] + (0 if a == b else EDIT)))
+        prev = cur
+    return prev[-1]
+
+
+@lru_cache(maxsize=None)
+def _frame_options(i: int, last: bool) -> tuple[tuple[tuple[int, ...], str], ...]:
+    """Alle möglichen Frames an Position i (0-basiert) mit ihren Anzeige-Symbolen.
+    Der letzte gespielte Frame darf angefangen sein."""
+    opts: set[tuple[int, ...]] = set()
+    for a in range(11):
+        for b in range(11):
+            for c in range(11):
+                for f in ((a,), (a, b), (a, b, c)):
+                    if (last or len(f) > 1 or a == 10) and frame_ok(list(f), i):
+                        opts.add(f)
+    if not last:
+        # Vor dem letzten Frame nur fertige Frames
+        opts = {f for f in opts if f == (10,) or len(f) == 2} if i < 9 else opts
+    return tuple((f, frames_to_symbols([list(f)])) for f in sorted(opts))
+
+
+def _frame_score(frames: list[tuple[int, ...]], k: int, i: int) -> tuple[int, bool]:
+    """Punkte von frames[k] (Spielframe i) samt Bonus aus den folgenden Frames der Liste,
+    und ob der Bonus schon vollständig ist."""
+    f = frames[k]
+    need = 0 if i == 9 else 2 if f[0] == 10 else 1 if sum(f) == 10 else 0
+    bonus = [r for g in frames[k + 1:] for r in g][:need]
+    return sum(f) + sum(bonus), len(bonus) == need
+
+
+def solve(symbols: str, shown: list[int]) -> Solution | None:
+    """Rekonstruiert die Frames aus den angezeigten Zwischenständen: unter allen Frame-Folgen,
+    die genau zu allen Zwischenständen passen, die mit dem kleinsten Abstand zur gelesenen
+    Wurfzeile. None, wenn keine Folge passt (dann sind die Zwischenstände selbst falsch gelesen)."""
+    read = symbols.replace(" ", "").upper().replace("0", "-")
+    n = len(shown)
+    if not 0 < n <= 10:
+        return None
+    deltas = [s - p for s, p in zip(shown, [0] + shown[:-1])]
+
+    # Zustand: (Position in der Lesung, Frames mit noch offenem Bonus samt allen danach)
+    State = tuple[int, tuple[tuple[int, ...], ...]]
+    forward: list[dict[State, float]] = [{(0, ()): 0.0}]
+    edges: list[list[tuple[State, tuple[int, ...], State, float]]] = []
+    for i in range(n):
+        last = i == n - 1
+        layer: dict[State, float] = {}
+        layer_edges = []
+        for (j, pending), cost in forward[i].items():
+            first = i - len(pending)  # Spielframe-Nummer von pending[0]
+            for frame, sym in _frame_options(i, last):
+                seq = list(pending) + [frame]
+                ok = True
+                keep = 0  # ab hier bleiben Frames offen
+                for k in range(len(seq)):
+                    score, final = _frame_score(seq, k, first + k)
+                    if final or last:
+                        if score != deltas[first + k]:
+                            ok = False
+                            break
+                        if keep == k:
+                            keep = k + 1
+                if not ok:
+                    continue
+                new_pending = tuple(seq[keep:])
+                for end in range(j, min(len(read), j + len(sym) + 2) + 1):
+                    inc = _align(sym, read[j:end])
+                    if last:
+                        inc += (len(read) - end) * EDIT  # übrig gebliebene Lesung
+                    key = (end, new_pending)
+                    layer_edges.append(((j, pending), frame, key, inc))
+                    if cost + inc < layer.get(key, float("inf")):
+                        layer[key] = cost + inc
+        if not layer:
             return None
-        frontier = candidates
-    return None
+        forward.append(layer)
+        edges.append(layer_edges)
+
+    best = min(forward[n].values())
+    backward: dict[State, float] = {k: 0.0 for k in forward[n]}
+    optimal: list[list[tuple[State, tuple[int, ...], State]]] = [[] for _ in range(n)]
+    for i in range(n - 1, -1, -1):
+        prev_back: dict[State, float] = {}
+        for src, frame, dst, inc in edges[i]:
+            if dst in backward:
+                rest = inc + backward[dst]
+                if rest < prev_back.get(src, float("inf")):
+                    prev_back[src] = rest
+                if forward[i][src] + rest <= best + 1e-9:
+                    optimal[i].append((src, frame, dst))
+        backward = prev_back
+
+    # Unter gleich guten Folgen die mit den höheren ersten Würfen (ein Fehlwurf ist beim
+    # ersten Wurf seltener als beim zweiten)
+    state: State = (0, ())
+    frames: list[list[int]] = []
+    for i in range(n):
+        _, frame, state = max((e for e in optimal[i] if e[0] == state), key=lambda e: e[1])
+        frames.append(list(frame))
+    unsure = [i for i in range(n) if len({e[1] for e in optimal[i]}) > 1]
+    return Solution(frames, unsure, best)

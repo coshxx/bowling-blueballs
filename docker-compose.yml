@@ -26,6 +26,8 @@ services:
 
   api:
     <<: *node
+    # sh als PID 1 reicht SIGTERM nicht weiter → tini übernimmt das
+    init: true
     command: sh -c "npm run -w api prisma:deploy && npm run -w api start:dev"
     environment:
       DATABASE_URL: file:/data/bowling.db

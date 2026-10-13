@@ -23,6 +23,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      start_period: 30s
+      start_interval: 1s
 
   # HTTP-Dienst für die App (POST /parse), nur intern erreichbar
   parser:
@@ -32,6 +34,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
+      start_period: 30s
+      start_interval: 1s
 
   # Einzelbild per Kommandozeile, schreibt ./out.json
   parser-cli:

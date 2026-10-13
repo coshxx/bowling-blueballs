@@ -17,9 +17,15 @@ export interface MeResponse {
   groups: GroupRef[];
 }
 
+/** Markierung eines vom Parser gelesenen Frames: error = sicher falsch, unsure = bitte prüfen */
+export type FrameMark = 'error' | 'unsure' | null;
+
 export interface ResultPlayer {
   name: string;
   frames: number[][];
+  /** 10 Frame-Texte, notfalls die rohe (ungültige) Lesung – fehlt bei älteren Analysen */
+  texts?: string[];
+  marks?: FrameMark[];
 }
 
 export interface GameRow {
