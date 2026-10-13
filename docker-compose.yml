@@ -1,0 +1,40 @@
+# Nutzung:
+#   IMAGE=./mein-bild.jpg docker compose up --exit-code-from parser
+# Ergebnis landet in ./out.json
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "10m"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  parser:
+    build: ./parser
+    depends_on:
+      ollama:
+        condition: service_healthy
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      MODEL: ${MODEL:-qwen2.5vl:7b}
+      MAX_ATTEMPTS: ${MAX_ATTEMPTS:-3}
+      INPUT: /data/input.jpg
+      OUTPUT: /out/out.json
+    volumes:
+      - type: bind
+        source: ${IMAGE:-./input.jpg}
+        target: /data/input.jpg
+        read_only: true
+        bind:
+          create_host_path: false
+      - ./:/out
+
+volumes:
+  ollama-models:
