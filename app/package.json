@@ -1,0 +1,11 @@
+{
+  "name": "bowling",
+  "private": true,
+  "workspaces": [
+    "api",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w web && npm run build -w api"
+  }
+}

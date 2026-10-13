@@ -1,7 +1,8 @@
 FROM python:3.12-slim
 
 WORKDIR /app
-COPY parse.py bowling.py ./
+COPY parse.py bowling.py server.py ./
 
 ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["python", "parse.py"]
+EXPOSE 8080
+CMD ["python", "server.py"]

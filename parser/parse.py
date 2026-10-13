@@ -135,13 +135,13 @@ def format_json(data: dict) -> str:
                   lambda m: "[" + ", ".join(re.findall(r"\d+", m.group(1))) + "]", text)
 
 
-def main() -> int:
-    if not os.path.isfile(INPUT):
-        log(f"Kein Bild gefunden unter {INPUT} (IMAGE=... setzen)")
-        return 1
-    with open(INPUT, "rb") as fh:
-        image_b64 = base64.b64encode(fh.read()).decode()
+class ParseError(Exception):
+    pass
 
+
+def parse_image(image_b64: str) -> tuple[dict, list[str]]:
+    """Liest das Bild bis zu MAX_ATTEMPTS-mal aus. Liefert das beste Ergebnis und die
+    verbliebenen Abweichungen (leer = alle Zwischenstände stimmen)."""
     ensure_model()
 
     best: tuple[dict, list[str]] | None = None
@@ -153,26 +153,39 @@ def main() -> int:
             raw = ask_model(image_b64, temperature)
             log(f"  Antwort nach {time.time() - start:.0f}s: {json.dumps(raw, ensure_ascii=False)}")
             result, problems = check(raw)
-        except (KeyError, TypeError, json.JSONDecodeError) as e:
+        except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as e:
             log(f"  Unbrauchbare Antwort: {e!r}")
             continue
         if not problems:
-            best = (result, problems)
             log("  Alle Zwischenstände stimmen.")
-            break
+            return result, problems
         for p in problems:
             log(f"  Problem: {p}")
         if best is None or len(problems) < len(best[1]):
             best = (result, problems)
 
     if best is None:
-        log("Kein verwertbares Ergebnis.")
+        raise ParseError("Kein verwertbares Ergebnis vom Modell")
+    return best
+
+
+def main() -> int:
+    if not os.path.isfile(INPUT):
+        log(f"Kein Bild gefunden unter {INPUT} (IMAGE=... setzen)")
+        return 1
+    with open(INPUT, "rb") as fh:
+        image_b64 = base64.b64encode(fh.read()).decode()
+
+    try:
+        result, problems = parse_image(image_b64)
+    except ParseError as e:
+        log(str(e))
         return 1
 
     with open(OUTPUT, "w", encoding="utf-8") as fh:
-        fh.write(format_json(best[0]) + "\n")
+        fh.write(format_json(result) + "\n")
     log(f"Geschrieben: {OUTPUT}")
-    if best[1]:
+    if problems:
         log("WARNUNG: Ergebnis passt nicht vollständig zu den angezeigten Zwischenständen.")
         return 2
     return 0

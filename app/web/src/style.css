@@ -1,0 +1,12 @@
+:root {
+  --status-pending: #6b7280;
+  --status-running: #2563eb;
+  --status-done: #16a34a;
+  --status-uncertain: #d97706;
+  --status-failed: #dc2626;
+}
+
+main.container {
+  max-width: 960px;
+  padding-top: 1.5rem;
+}

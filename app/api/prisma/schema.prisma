@@ -1,0 +1,26 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Entry {
+  id          Int       @id @default(autoincrement())
+  /// Dateiname in DATA_DIR/images
+  imageFile   String
+  imageType   String
+  /// "pending" | "running" | "done" | "uncertain" | "failed"
+  status      String    @default("pending")
+  /// JSON im Format {"players": [{"name", "frames"}]}
+  result      String?
+  /// JSON-Array mit Abweichungen zu den angezeigten Zwischenständen (bei "uncertain")
+  problems    String?
+  error       String?
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([status, createdAt])
+}
