@@ -60,7 +60,8 @@ export class EntriesService {
       approvedAt: e.approvedAt?.toISOString() ?? null,
       uploader: e.uploader?.username ?? null,
       approvedBy: e.approvedBy?.username ?? null,
-      imageUrl: `/api/entries/${e.id}/image`,
+      // Dateiname in der URL: Bilder werden lange gecacht, IDs können sich nach einem DB-Reset wiederholen
+      imageUrl: `/api/entries/${e.id}/image?f=${e.imageFile}`,
       result: parseJson<{ players: { name: string; frames: number[][] }[] } | null>(e.result, null),
       scores: parseJson<number[][]>(e.scores, []),
       problems: parseJson<string[]>(e.problems, []),
