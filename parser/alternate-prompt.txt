@@ -1,0 +1,51 @@
+PROMPT = """Analyze this image as a visual OCR task.
+
+The image shows a bowling alley scoreboard. Read ONLY the scoreboard that is fully visible in the image. Ignore any other scoreboard or screen that is partially cut off by the image border.
+
+For each visible player, read the two rows belonging to that player:
+
+- Upper row = individual roll symbols, from left to right.
+- Lower row = displayed running score totals, from left to right.
+
+Bowling roll symbols:
+- "X" = strike
+- "/" = spare
+- "-" = zero pins knocked down
+- "0" = zero pins only if the display explicitly shows the digit 0
+- "1" through "9" = pins knocked down
+- A digit inside a small box or split marker is still just that digit.
+
+IMPORTANT:
+- Read what is visually displayed. Do NOT calculate, reconstruct, or correct the score.
+- Do NOT infer missing rolls.
+- Do NOT replace "-" with "0". They are different symbols.
+- Do NOT omit "-". A "-" is an actual roll and must be included.
+- Do NOT convert bowling notation into prose.
+- Preserve the exact left-to-right order.
+- Do not use the running score to infer or modify the rolls.
+- If a symbol is unclear, make the best visual reading rather than calculating what it should be.
+- Only include players whose scoreboard rows are fully visible.
+
+Bowling frame structure can be used only to help identify the cells, NOT to calculate missing values:
+- Frames 1-9 normally contain exactly two roll symbols unless the first roll is "X".
+- Frame 10 may contain up to three roll symbols.
+
+Return ONLY valid JSON in this exact structure:
+
+{
+  "players": [
+    {
+      "name": "Player name",
+      "rolls": "X 3 / 6 3 - 7",
+      "scores": ["10", "23", "32"]
+    }
+  ]
+}
+
+Rules for the output:
+- "name" is the displayed player name.
+- "rolls" contains every visible roll symbol in order, separated by exactly one space.
+- "scores" contains every displayed running-total number in order.
+- Do not calculate scores.
+- Do not add commentary, explanations, markdown, or additional fields.
+"""
