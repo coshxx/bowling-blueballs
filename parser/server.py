@@ -1,6 +1,6 @@
 """HTTP-Dienst um den Parser: POST /parse mit den Bild-Bytes als Body.
 
-Antwort 200: {"status": "ok" | "uncertain", "result": {...}, "problems": [...]}
+Antwort 200: {"status": "ok" | "uncertain", "result": {...}, "problems": [...], "scores": [[...], ...]}
 Antwort 4xx/5xx: {"error": "..."}
 Nimmt Anfragen parallel an (damit /health auch während eines Laufs antwortet), lässt aber nur
 einen Parse-Auftrag gleichzeitig ans Modell. Die Warteschlange liegt beim Aufrufer.
@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
         image_b64 = base64.b64encode(self.rfile.read(length)).decode()
         try:
             with PARSE_LOCK:
-                result, problems = parse_image(image_b64)
+                result, problems, scores = parse_image(image_b64)
         except ParseError as e:
             self.send_json(422, {"error": str(e)})
             return
@@ -70,6 +70,7 @@ class Handler(BaseHTTPRequestHandler):
             "status": "uncertain" if problems else "ok",
             "result": result,
             "problems": problems,
+            "scores": scores,
         })
 
     def log_message(self, fmt: str, *args) -> None:

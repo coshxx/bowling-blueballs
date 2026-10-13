@@ -102,6 +102,7 @@ class PlayerResult(NamedTuple):
     name: str
     frames: list[list[int]] | None  # None = Transkription nicht verwertbar
     problems: list[str]
+    scores: list[int]  # vom Modell gelesene Zwischenstände
 
     def rank(self) -> tuple[bool, int]:
         """Kleiner = besser: erst verwertbare Frames, dann wenige Abweichungen."""
@@ -118,14 +119,14 @@ def check_player(p: dict) -> PlayerResult:
     except ValueError as e:
         frames, error = None, str(e)
     if frames is not None and matches_scores(frames, shown):
-        return PlayerResult(name, frames, [])
+        return PlayerResult(name, frames, [], shown)
 
     fixed = repair(p["rolls"], shown)
     if fixed is not None:
         log(f"  {name}: Transkription korrigiert (eindeutig über Zwischenstände)")
-        return PlayerResult(name, fixed, [])
+        return PlayerResult(name, fixed, [], shown)
     if frames is None:
-        return PlayerResult(name, None, [f"{name}: {error}"])
+        return PlayerResult(name, None, [f"{name}: {error}"], shown)
 
     problems = []
     computed = running_scores(frames)
@@ -134,7 +135,7 @@ def check_player(p: dict) -> PlayerResult:
     for i, (s, calc) in enumerate(zip(shown, computed), 1):
         if s != calc:
             problems.append(f"{name}: Frame {i} angezeigt {s}, berechnet {calc}")
-    return PlayerResult(name, frames, problems)
+    return PlayerResult(name, frames, problems, shown)
 
 
 def format_json(data: dict) -> str:
@@ -148,10 +149,11 @@ class ParseError(Exception):
     pass
 
 
-def parse_image(image_b64: str) -> tuple[dict, list[str]]:
+def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
     """Liest das Bild bis zu MAX_ATTEMPTS-mal aus und übernimmt für jeden Spieler die beste
     Transkription aus allen Versuchen. Liefert das Ergebnis und die verbliebenen
-    Abweichungen (leer = alle Zwischenstände stimmen)."""
+    Abweichungen (leer = alle Zwischenstände stimmen) sowie die gelesenen Zwischenstände
+    pro Spieler (gleiche Reihenfolge wie result["players"])."""
     ensure_model()
 
     best: list[PlayerResult] | None = None
@@ -187,8 +189,9 @@ def parse_image(image_b64: str) -> tuple[dict, list[str]]:
 
     if best is None:
         raise ParseError("Kein verwertbares Ergebnis vom Modell")
-    result = {"players": [{"name": r.name, "frames": r.frames} for r in best if r.frames is not None]}
-    return result, [p for r in best for p in r.problems]
+    usable = [r for r in best if r.frames is not None]
+    result = {"players": [{"name": r.name, "frames": r.frames} for r in usable]}
+    return result, [p for r in best for p in r.problems], [r.scores for r in usable]
 
 
 def main() -> int:
@@ -199,7 +202,7 @@ def main() -> int:
         image_b64 = base64.b64encode(fh.read()).decode()
 
     try:
-        result, problems = parse_image(image_b64)
+        result, problems, _ = parse_image(image_b64)
     except ParseError as e:
         log(str(e))
         return 1
