@@ -117,3 +117,58 @@ export interface Member {
   canUpload: boolean;
   since: string;
 }
+
+export interface Location {
+  id: number;
+  name: string;
+}
+
+export interface MenuItem {
+  id: number;
+  name: string;
+  priceCents: number;
+  hidden: boolean;
+  /** Anzahl der Positionen, die auf den Artikel verweisen */
+  uses: number;
+}
+
+export interface EveningItem {
+  id: number;
+  playerId: number;
+  playerName: string;
+  menuItemId: number;
+  itemName: string;
+  quantity: number;
+  unitCents: number;
+  totalCents: number;
+}
+
+interface EveningBase {
+  id: number;
+  groupId: number;
+  date: string;
+  label: string | null;
+  location: Location | null;
+  createdBy: string | null;
+  createdAt: string;
+  totalCents: number;
+  can: { edit: boolean; delete: boolean };
+}
+
+export interface EveningSummary extends EveningBase {
+  players: number;
+  positions: number;
+}
+
+export interface Evening extends EveningBase {
+  items: EveningItem[];
+  totals: { playerId: number; playerName: string; totalCents: number }[];
+}
+
+export interface AddConsumption {
+  playerId?: number;
+  newPlayerName?: string;
+  itemName: string;
+  quantity: number;
+  unitCents: number;
+}

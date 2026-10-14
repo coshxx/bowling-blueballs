@@ -14,6 +14,10 @@ import { EntriesController } from './entries/entries.controller';
 import { EntriesService } from './entries/entries.service';
 import { ParserClient } from './entries/parser.client';
 import { WorkerService } from './entries/worker.service';
+import { EveningsController } from './evenings/evenings.controller';
+import { EveningsService } from './evenings/evenings.service';
+import { LocationsController } from './locations/locations.controller';
+import { LocationsService } from './locations/locations.service';
 import { PlayersController } from './players/players.controller';
 import { PlayersService } from './players/players.service';
 import { StatsController } from './stats/stats.controller';
@@ -31,7 +35,15 @@ const staticModules = config.webDist
 
 @Module({
   imports: [ThrottlerModule.forRoot([{ ttl: 60_000, limit: 10 }]), ...staticModules],
-  controllers: [AuthController, AdminController, EntriesController, PlayersController, StatsController],
+  controllers: [
+    AuthController,
+    AdminController,
+    EntriesController,
+    PlayersController,
+    StatsController,
+    LocationsController,
+    EveningsController,
+  ],
   providers: [
     PrismaService,
     AccessService,
@@ -42,6 +54,8 @@ const staticModules = config.webDist
     WorkerService,
     PlayersService,
     StatsService,
+    LocationsService,
+    EveningsService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

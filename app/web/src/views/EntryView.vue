@@ -175,7 +175,7 @@ void load();
 </script>
 
 <template>
-  <p><RouterLink :to="{ name: 'entries' }">← Zurück zu den Einträgen</RouterLink></p>
+  <p><RouterLink :to="{ name: 'entries' }">← Zurück zu den Fotos</RouterLink></p>
   <p v-if="loadError" class="msg-error">{{ loadError }}</p>
 
   <template v-if="entry">

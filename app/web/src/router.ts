@@ -6,7 +6,14 @@ export const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', name: 'login', component: () => import('./views/LoginView.vue'), meta: { public: true } },
-    { path: '/', name: 'entries', component: () => import('./views/EntriesView.vue') },
+    { path: '/', name: 'evenings', component: () => import('./views/EveningsView.vue') },
+    {
+      path: '/abende/:id',
+      name: 'evening',
+      component: () => import('./views/EveningView.vue'),
+      props: (r) => ({ id: Number(r.params.id) }),
+    },
+    { path: '/fotos', name: 'entries', component: () => import('./views/EntriesView.vue') },
     { path: '/entries/:id', name: 'entry', component: () => import('./views/EntryView.vue'), props: (r) => ({ id: Number(r.params.id) }) },
     { path: '/stats', name: 'stats', component: () => import('./views/StatsView.vue') },
     { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue'), meta: { admin: true } },
@@ -26,13 +33,13 @@ router.beforeEach(async (to) => {
     await loadSession();
   }
   if (to.meta.public) {
-    return session.me ? { name: 'entries' } : true;
+    return session.me ? { name: 'evenings' } : true;
   }
   if (!session.me) {
     return { name: 'login', query: to.fullPath !== '/' ? { next: to.fullPath } : {} };
   }
   if (to.meta.admin && !session.me.user.isAdmin) {
-    return { name: 'entries' };
+    return { name: 'evenings' };
   }
   return true;
 });

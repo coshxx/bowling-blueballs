@@ -1,9 +1,29 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router';
+import { ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from './api';
 import { applySession, currentGroup, selectGroup, session } from './session';
 
 const router = useRouter();
+const route = useRoute();
+
+/** Fotos, die auf Freigabe warten – nach jedem Seitenwechsel neu gezählt */
+const reviewCount = ref(0);
+watch(
+  [() => currentGroup.value?.id, () => route.fullPath],
+  async ([groupId]) => {
+    if (!groupId) {
+      reviewCount.value = 0;
+      return;
+    }
+    try {
+      reviewCount.value = (await api.listEntries(groupId, 'review')).length;
+    } catch {
+      // Zähler ist nur ein Hinweis
+    }
+  },
+  { immediate: true },
+);
 
 async function logout() {
   await api.logout().catch(() => undefined);
@@ -21,7 +41,12 @@ function onGroupChange(e: Event) {
     <nav>
       <ul>
         <li><strong>🎳 Bowling</strong></li>
-        <li><RouterLink :to="{ name: 'entries' }">Einträge</RouterLink></li>
+        <li><RouterLink :to="{ name: 'evenings' }">Abende</RouterLink></li>
+        <li>
+          <RouterLink :to="{ name: 'entries' }">
+            Fotos<span v-if="reviewCount" class="badge" :title="`${reviewCount} zur Freigabe`">{{ reviewCount }}</span>
+          </RouterLink>
+        </li>
         <li><RouterLink :to="{ name: 'stats' }">Statistik</RouterLink></li>
         <li v-if="session.me.user.isAdmin"><RouterLink :to="{ name: 'admin' }">Verwaltung</RouterLink></li>
       </ul>
@@ -56,5 +81,18 @@ nav {
 }
 a.router-link-exact-active {
   font-weight: 700;
+}
+.badge {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 0.35em;
+  padding: 0 0.4em;
+  border-radius: 1em;
+  background: var(--status-review);
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
 }
 </style>

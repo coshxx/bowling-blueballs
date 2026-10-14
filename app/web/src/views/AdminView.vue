@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
+import MenuAdmin from '../components/MenuAdmin.vue';
 import { formatDateTime } from '../format';
 import { loadSession, session } from '../session';
 import type { AdminGroup, AdminUser } from '../types';
 
-const tab = ref<'groups' | 'users'>('groups');
+const tab = ref<'groups' | 'users' | 'menus'>('groups');
 const users = ref<AdminUser[]>([]);
 const groups = ref<AdminGroup[]>([]);
 const newGroupName = ref('');
@@ -83,6 +84,7 @@ onMounted(load);
   <div role="group" class="tabs">
     <button type="button" :class="{ outline: tab !== 'groups' }" @click="tab = 'groups'">Gruppen</button>
     <button type="button" :class="{ outline: tab !== 'users' }" @click="tab = 'users'">Benutzer</button>
+    <button type="button" :class="{ outline: tab !== 'menus' }" @click="tab = 'menus'">Speisekarten</button>
   </div>
   <p v-if="error" class="msg-error">{{ error }}</p>
 
@@ -133,6 +135,8 @@ onMounted(load);
     </div>
   </template>
 
+  <MenuAdmin v-else-if="tab === 'menus'" />
+
   <template v-else>
     <div class="overflow-auto">
       <table>
@@ -176,7 +180,7 @@ onMounted(load);
 
 <style scoped>
 .tabs {
-  max-width: 20rem;
+  max-width: 30rem;
 }
 .inline-form {
   display: flex;

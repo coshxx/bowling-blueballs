@@ -36,3 +36,21 @@ export function formatPercent(value: number | null): string {
 export function formatNumber(value: number): string {
   return value.toLocaleString('de-DE', { maximumFractionDigits: 1 });
 }
+
+const euro = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
+
+export function formatEuro(cents: number): string {
+  return euro.format(cents / 100);
+}
+
+/** Eingabe wie "4,80", "4.8" oder "5" → Cent; null bei Unsinn */
+export function parseEuro(text: string): number | null {
+  const m = /^\s*(\d{1,4})(?:[.,](\d{1,2}))?\s*(?:€)?\s*$/.exec(text);
+  if (!m) return null;
+  return Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
+}
+
+/** Cent als Eingabetext für Preisfelder: 480 → "4,80" */
+export function centsToInput(cents: number): string {
+  return (cents / 100).toFixed(2).replace('.', ',');
+}

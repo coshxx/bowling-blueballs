@@ -1,10 +1,15 @@
 import type {
+  AddConsumption,
   AdminGroup,
   AdminUser,
   ApprovePlayer,
   Entry,
+  Evening,
+  EveningSummary,
   GroupStats,
+  Location,
   Member,
+  MenuItem,
   MeResponse,
   Player,
 } from './types';
@@ -72,6 +77,27 @@ export const api = {
   mergePlayer: (id: number, intoPlayerId: number) => request<void>('POST', `/players/${id}/merge`, { intoPlayerId }),
   deletePlayer: (id: number) => request<void>('DELETE', `/players/${id}`),
   deleteAlias: (id: number) => request<void>('DELETE', `/aliases/${id}`),
+
+  listLocations: () => request<Location[]>('GET', '/locations'),
+  createLocation: (name: string) => request<Location>('POST', '/locations', { name }),
+  menu: (locationId: number, includeHidden = false) =>
+    request<MenuItem[]>('GET', `/locations/${locationId}/menu${includeHidden ? '?hidden=true' : ''}`),
+  updateMenuItem: (id: number, data: { name?: string; priceCents?: number; hidden?: boolean }) =>
+    request<void>('PATCH', `/menu-items/${id}`, data),
+  deleteMenuItem: (id: number) => request<{ hidden: boolean }>('DELETE', `/menu-items/${id}`),
+
+  listEvenings: (groupId: number) => request<EveningSummary[]>('GET', `/groups/${groupId}/evenings`),
+  createEvening: (groupId: number, data: { date: string; locationId?: number; label?: string }) =>
+    request<Evening>('POST', `/groups/${groupId}/evenings`, data),
+  getEvening: (id: number) => request<Evening>('GET', `/evenings/${id}`),
+  updateEvening: (id: number, data: { date?: string; locationId?: number | null; label?: string | null }) =>
+    request<Evening>('PATCH', `/evenings/${id}`, data),
+  deleteEvening: (id: number) => request<void>('DELETE', `/evenings/${id}`),
+  addConsumption: (eveningId: number, data: AddConsumption) =>
+    request<Evening>('POST', `/evenings/${eveningId}/consumptions`, data),
+  updateConsumption: (id: number, data: { quantity?: number; unitCents?: number }) =>
+    request<Evening>('PATCH', `/consumptions/${id}`, data),
+  deleteConsumption: (id: number) => request<Evening>('DELETE', `/consumptions/${id}`),
 
   stats: (groupId: number) => request<GroupStats>('GET', `/groups/${groupId}/stats`),
 

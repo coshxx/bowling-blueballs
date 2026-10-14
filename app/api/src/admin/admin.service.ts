@@ -119,6 +119,9 @@ export class AdminService {
     if (await this.prisma.entry.count({ where: { groupId: id, status: 'approved' } })) {
       throw new BadRequestException('Die Gruppe hat freigegebene Einträge und kann nicht gelöscht werden.');
     }
+    if (await this.prisma.consumption.count({ where: { evening: { groupId: id } } })) {
+      throw new BadRequestException('Die Gruppe hat eingetragenen Verzehr und kann nicht gelöscht werden.');
+    }
     const entries = await this.prisma.entry.findMany({ where: { groupId: id }, select: { imageFile: true } });
     await this.prisma.group.delete({ where: { id } });
     await Promise.all(entries.map((e) => unlink(join(config.imagesDir, e.imageFile)).catch(() => undefined)));

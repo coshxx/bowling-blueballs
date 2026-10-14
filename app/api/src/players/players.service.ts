@@ -55,7 +55,7 @@ export class PlayersService {
     }
   }
 
-  /** Legt zwei Spieler zusammen: Spiele und Aliase wandern zum Ziel, der Quellspieler verschwindet. */
+  /** Legt zwei Spieler zusammen: Spiele, Aliase und Verzehr wandern zum Ziel, der Quellspieler verschwindet. */
   async merge(id: number, intoPlayerId: number) {
     if (id === intoPlayerId) {
       throw new BadRequestException('Ein Spieler kann nicht mit sich selbst zusammengelegt werden.');
@@ -68,6 +68,7 @@ export class PlayersService {
     await this.prisma.$transaction([
       this.prisma.game.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
       this.prisma.playerAlias.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
+      this.prisma.consumption.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
       this.prisma.player.update({ where: { id: intoPlayerId }, data: { userId: target.userId ?? source.userId } }),
       this.prisma.player.delete({ where: { id } }),
     ]);
@@ -77,6 +78,9 @@ export class PlayersService {
     await this.getPlayer(id);
     if (await this.prisma.game.count({ where: { playerId: id } })) {
       throw new BadRequestException('Der Spieler hat freigegebene Spiele. Zusammenlegen statt löschen.');
+    }
+    if (await this.prisma.consumption.count({ where: { playerId: id } })) {
+      throw new BadRequestException('Der Spieler hat eingetragenen Verzehr. Zusammenlegen statt löschen.');
     }
     await this.prisma.player.delete({ where: { id } });
   }
