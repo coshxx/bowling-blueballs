@@ -20,6 +20,8 @@ model User {
   /// PayPal.Me-Name für Zahlungslinks (paypal.me/<name>/<betrag>EUR)
   paypalMe       String?
   createdAt      DateTime     @default(now())
+  /// Letzte eingeloggte Anfrage, höchstens alle 5 Minuten aktualisiert
+  lastSeenAt     DateTime?
   memberships    Membership[]
   uploads        Entry[]      @relation("uploader")
   approvals      Entry[]      @relation("approver")

@@ -9,6 +9,23 @@ export function formatDateTime(iso: string): string {
   return dateTime.format(new Date(iso));
 }
 
+/** Grob relativ: „gerade eben“, „vor 3 Min.“, „vor 5 Std.“, „vor 2 Tagen“ */
+export function formatAgo(iso: string): string {
+  const minutes = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (minutes < 5) {
+    return 'gerade eben';
+  }
+  if (minutes < 60) {
+    return `vor ${minutes} Min.`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `vor ${hours} Std.`;
+  }
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'vor 1 Tag' : `vor ${days} Tagen`;
+}
+
 /** "2026-02-11" → "11.02.2026" (als reines Datum, ohne Zeitzonenverschiebung) */
 export function formatDate(ymd: string): string {
   return dateOnly.format(new Date(`${ymd}T00:00:00Z`));

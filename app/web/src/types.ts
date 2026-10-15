@@ -98,6 +98,7 @@ export interface AdminUser {
   username: string;
   isAdmin: boolean;
   createdAt: string;
+  lastSeenAt: string | null;
   groups: string[];
 }
 

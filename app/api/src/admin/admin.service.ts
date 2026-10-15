@@ -23,6 +23,7 @@ export class AdminService {
       username: u.username,
       isAdmin: u.isAdmin,
       createdAt: u.createdAt.toISOString(),
+      lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
       groups: u.memberships.map((m) => m.group.name).sort(),
     }));
   }

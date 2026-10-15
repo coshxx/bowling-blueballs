@@ -2,7 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import MenuAdmin from '../components/MenuAdmin.vue';
-import { formatDateTime } from '../format';
+import { formatAgo, formatDateTime } from '../format';
 import { loadSession, session } from '../session';
 import type { AdminGroup, AdminUser } from '../types';
 
@@ -146,6 +146,7 @@ onMounted(load);
             <th>Rolle</th>
             <th>Gruppen</th>
             <th>Registriert</th>
+            <th>Zuletzt online</th>
             <th></th>
           </tr>
         </thead>
@@ -155,6 +156,10 @@ onMounted(load);
             <td>{{ u.isAdmin ? 'Admin' : 'Benutzer' }}</td>
             <td>{{ u.groups.join(', ') || '–' }}</td>
             <td>{{ formatDateTime(u.createdAt) }}</td>
+            <td>
+              <span v-if="u.lastSeenAt" :title="formatDateTime(u.lastSeenAt)">{{ formatAgo(u.lastSeenAt) }}</span>
+              <template v-else>–</template>
+            </td>
             <td class="actions">
               <button type="button" class="small secondary outline" :disabled="busy" @click="toggleAdmin(u)">
                 {{ u.isAdmin ? 'Admin entziehen' : 'Zum Admin machen' }}
