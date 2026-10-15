@@ -1,4 +1,17 @@
-import { IsInt, IsOptional, IsString, Length, Matches, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 import { DATE_PATTERN } from '../entries/entries.dto';
 import { MAX_CENTS } from '../locations/locations.dto';
 
@@ -35,8 +48,21 @@ export class UpdateEveningDto {
   label?: string | null;
 }
 
-export class AddConsumptionDto {
+export class AddAttendeeDto {
   /** Bestehender Spieler … */
+  @IsOptional()
+  @IsInt()
+  playerId?: number;
+
+  /** … oder neuer Gast mit diesem Namen */
+  @IsOptional()
+  @IsString()
+  @Length(1, 40, { message: 'Der Name muss 1 bis 40 Zeichen lang sein.' })
+  newPlayerName?: string;
+}
+
+export class AddConsumptionDto {
+  /** Einzelposition: bestehender Spieler … */
   @IsOptional()
   @IsInt()
   playerId?: number;
@@ -46,6 +72,18 @@ export class AddConsumptionDto {
   @IsString()
   @Length(1, 40, { message: 'Der Spielername muss 1 bis 40 Zeichen lang sein.' })
   newPlayerName?: string;
+
+  /** Geteilte Position: diese Teilnehmer zahlen zu gleichen Teilen (statt playerId/newPlayerName) */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsInt({ each: true })
+  sharedWith?: number[];
+
+  /** Einzelposition, die in dieser geteilten Position steckt (z. B. Leihschuhe in "Bowling") */
+  @IsOptional()
+  @IsInt()
+  containedInId?: number;
 
   /** Name des Artikels; steht er noch nicht auf der Karte, wird er angelegt */
   @IsString()
@@ -75,4 +113,29 @@ export class UpdateConsumptionDto {
   @Min(0)
   @Max(MAX_CENTS)
   unitCents?: number;
+
+  /** Nur geteilte Positionen: neue Auswahl, wer mitzahlt */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsInt({ each: true })
+  sharedWith?: number[];
+
+  /** Nur Einzelpositionen: steckt in dieser geteilten Position; null löst die Verbindung */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsInt()
+  containedInId?: number | null;
+}
+
+export class BillDto {
+  /** Teilnehmer mit Konto, der das Geld bekommt; Standard ist der Besitzer */
+  @IsOptional()
+  @IsInt()
+  recipientId?: number;
+}
+
+export class MarkPaidDto {
+  @IsBoolean()
+  paid: boolean;
 }

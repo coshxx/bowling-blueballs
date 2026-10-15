@@ -1,4 +1,4 @@
-import { IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { IsOptional, IsString, Length, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 
 export const USERNAME_PATTERN = /^[\p{L}\p{N}_.-]+$/u;
 
@@ -22,4 +22,13 @@ export class LoginDto {
   @IsString()
   @MaxLength(200)
   password: string;
+}
+
+export class UpdateProfileDto {
+  /** PayPal.Me-Name ohne "paypal.me/"; null oder leer entfernt ihn */
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null && v !== '')
+  @IsString()
+  @Matches(/^[A-Za-z0-9]{1,20}$/, { message: 'Der PayPal.Me-Name darf nur Buchstaben und Ziffern enthalten (höchstens 20).' })
+  paypalMe?: string | null;
 }

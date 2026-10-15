@@ -54,3 +54,10 @@ export function parseEuro(text: string): number | null {
 export function centsToInput(cents: number): string {
   return (cents / 100).toFixed(2).replace('.', ',');
 }
+
+/** PayPal.Me-Link mit vorausgefülltem Betrag */
+export function paypalLink(name: string, cents: number): string {
+  return `https://paypal.me/${encodeURIComponent(name)}/${(cents / 100).toFixed(2)}EUR`;
+}
+
+export const EVENING_STATUS_LABELS = { open: 'läuft', billed: 'abgerechnet', settled: 'erledigt' } as const;

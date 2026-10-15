@@ -15,6 +15,7 @@ export interface GroupRef {
 export interface MeResponse {
   user: SessionUser;
   groups: GroupRef[];
+  profile: { paypalMe: string | null };
 }
 
 /** Markierung eines vom Parser gelesenen Frames: error = sicher falsch, unsure = bitte prüfen */
@@ -132,15 +133,40 @@ export interface MenuItem {
   uses: number;
 }
 
+export type EveningStatus = 'open' | 'billed' | 'settled';
+
 export interface EveningItem {
   id: number;
-  playerId: number;
-  playerName: string;
+  /** Geteilte Position: playerId/playerName sind null, wer mitzahlt steht in shares */
+  shared: boolean;
+  playerId: number | null;
+  playerName: string | null;
+  shares: { playerId: number; playerName: string }[];
   menuItemId: number;
   itemName: string;
   quantity: number;
   unitCents: number;
   totalCents: number;
+  /** Geteilte Position: Betrag nach Abzug der enthaltenen Einzelpositionen */
+  netCents: number | null;
+  /** Einzelposition, die in dieser geteilten Position steckt */
+  containedInId: number | null;
+}
+
+export interface EveningAttendee {
+  playerId: number;
+  playerName: string;
+  hasAccount: boolean;
+  isMe: boolean;
+  isRecipient: boolean;
+  amountCents: number;
+  paid: boolean;
+  paidAt: string | null;
+  paidBy: string | null;
+  paidCentsDiffer: boolean;
+  canMarkPaid: boolean;
+  /** Hat Positionen oder Anteile und lässt sich deshalb nicht entfernen */
+  locked: boolean;
 }
 
 interface EveningBase {
@@ -149,10 +175,16 @@ interface EveningBase {
   date: string;
   label: string | null;
   location: Location | null;
-  createdBy: string | null;
+  status: EveningStatus;
+  owner: string | null;
+  isOwner: boolean;
+  recipient: { playerId: number; playerName: string; paypalMe: string | null } | null;
+  billedAt: string | null;
   createdAt: string;
   totalCents: number;
-  can: { edit: boolean; delete: boolean };
+  openCents: number;
+  myOpenCents: number;
+  can: { edit: boolean; delete: boolean; bill: boolean; reopen: boolean };
 }
 
 export interface EveningSummary extends EveningBase {
@@ -161,13 +193,16 @@ export interface EveningSummary extends EveningBase {
 }
 
 export interface Evening extends EveningBase {
+  attendees: EveningAttendee[];
   items: EveningItem[];
-  totals: { playerId: number; playerName: string; totalCents: number }[];
+  problems: string[];
 }
 
 export interface AddConsumption {
   playerId?: number;
   newPlayerName?: string;
+  sharedWith?: number[];
+  containedInId?: number;
   itemName: string;
   quantity: number;
   unitCents: number;

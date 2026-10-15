@@ -17,12 +17,15 @@ model User {
   isAdmin        Boolean      @default(false)
   /// Wird beim Passwort-Reset erhöht und macht bestehende Sessions ungültig
   sessionVersion Int          @default(0)
+  /// PayPal.Me-Name für Zahlungslinks (paypal.me/<name>/<betrag>EUR)
+  paypalMe       String?
   createdAt      DateTime     @default(now())
   memberships    Membership[]
   uploads        Entry[]      @relation("uploader")
   approvals      Entry[]      @relation("approver")
   players        Player[]
   evenings       Evening[]
+  paidMarks      EveningAttendee[]
 }
 
 model Group {
@@ -59,6 +62,9 @@ model Player {
   aliases      PlayerAlias[]
   games        Game[]
   consumptions Consumption[]
+  shares       ConsumptionShare[]
+  attendances  EveningAttendee[]
+  receipts     Evening[]          @relation("recipient")
 
   @@unique([groupId, name])
 }
@@ -160,37 +166,81 @@ model MenuItem {
 
 /// Ein Abend einer Gruppe, an dem Verzehr erfasst wird; unabhängig von den Fotos
 model Evening {
-  id           Int           @id @default(autoincrement())
+  id           Int               @id @default(autoincrement())
   groupId      Int
   /// YYYY-MM-DD; mehrere Abende am selben Tag sind möglich
   date         String
   locationId   Int?
   /// Optionale Bezeichnung, z. B. "Firmenfeier"
   label        String?
+  /// Besitzer: legt an, gibt zur Zahlung frei und bekommt standardmäßig das Geld
   createdById  Int?
-  createdAt    DateTime      @default(now())
-  group        Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  location     Location?     @relation(fields: [locationId], references: [id], onDelete: Restrict)
-  createdBy    User?         @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+  /// "open" (läuft, Positionen bearbeitbar) | "billed" (zur Zahlung freigegeben, gesperrt);
+  /// "erledigt" wird nicht gespeichert, sondern ergibt sich aus den Zahlungen
+  status       String            @default("open")
+  /// Teilnehmer, der die Rechnung bezahlt hat und das Geld bekommt; gesetzt beim Freigeben
+  recipientId  Int?
+  billedAt     DateTime?
+  group        Group             @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  location     Location?         @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  createdBy    User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  recipient    Player?           @relation("recipient", fields: [recipientId], references: [id], onDelete: Restrict)
   consumptions Consumption[]
+  attendees    EveningAttendee[]
 
   @@index([groupId, date])
 }
 
-/// Verzehr eines Spielers an einem Abend
+/// Teilnehmer eines Abends samt Zahlungsstatus
+model EveningAttendee {
+  eveningId Int
+  playerId  Int
+  /// Gesetzt, sobald der Anteil als bezahlt markiert ist (vom Teilnehmer selbst oder vom Besitzer)
+  paidAt    DateTime?
+  /// Betrag beim Abhaken; weicht er vom aktuellen ab, wurde danach noch etwas geändert
+  paidCents Int?
+  paidById  Int?
+  evening   Evening   @relation(fields: [eveningId], references: [id], onDelete: Cascade)
+  player    Player    @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  paidBy    User?     @relation(fields: [paidById], references: [id], onDelete: SetNull)
+
+  @@id([eveningId, playerId])
+  @@index([playerId])
+}
+
+/// Position an einem Abend: gehört einem Spieler (playerId) oder wird geteilt (playerId null, shares)
 model Consumption {
-  id         Int      @id @default(autoincrement())
-  eveningId  Int
-  playerId   Int
-  menuItemId Int
-  quantity   Int
+  id            Int                @id @default(autoincrement())
+  eveningId     Int
+  /// null = geteilte Position, verteilt auf die Spieler in shares
+  playerId      Int?
+  menuItemId    Int
+  quantity      Int
   /// Einzelpreis in Cent zum Zeitpunkt des Eintragens (Kopie, unabhängig von späteren Kartenpreisen)
-  unitCents  Int
-  createdAt  DateTime @default(now())
-  evening    Evening  @relation(fields: [eveningId], references: [id], onDelete: Cascade)
-  player     Player   @relation(fields: [playerId], references: [id], onDelete: Restrict)
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  unitCents     Int
+  /// Einzelposition, die in einer geteilten Position steckt (z. B. Leihschuhe in "Bowling"):
+  /// wird vor dem Verteilen vom Betrag der geteilten Position abgezogen
+  containedInId Int?
+  createdAt     DateTime           @default(now())
+  evening       Evening            @relation(fields: [eveningId], references: [id], onDelete: Cascade)
+  player        Player?            @relation(fields: [playerId], references: [id], onDelete: Restrict)
+  menuItem      MenuItem           @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  containedIn   Consumption?       @relation("contained", fields: [containedInId], references: [id], onDelete: SetNull)
+  contained     Consumption[]      @relation("contained")
+  shares        ConsumptionShare[]
 
   @@index([eveningId])
+  @@index([playerId])
+}
+
+/// Wer an einer geteilten Position mitzahlt (zu gleichen Teilen)
+model ConsumptionShare {
+  consumptionId Int
+  playerId      Int
+  consumption   Consumption @relation(fields: [consumptionId], references: [id], onDelete: Cascade)
+  player        Player      @relation(fields: [playerId], references: [id], onDelete: Restrict)
+
+  @@id([consumptionId, playerId])
   @@index([playerId])
 }

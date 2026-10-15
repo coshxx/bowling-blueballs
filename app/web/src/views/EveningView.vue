@@ -3,8 +3,17 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api';
 import LocationSelect from '../components/LocationSelect.vue';
-import { centsToInput, formatDate, formatEuro, parseEuro } from '../format';
-import type { Evening, EveningItem, Location, MenuItem, Player } from '../types';
+import {
+  centsToInput,
+  EVENING_STATUS_LABELS,
+  formatDate,
+  formatDateTime,
+  formatEuro,
+  paypalLink,
+  parseEuro,
+} from '../format';
+import { session } from '../session';
+import type { Evening, EveningAttendee, EveningItem, Location, MenuItem, Player } from '../types';
 
 const props = defineProps<{ id: number }>();
 const router = useRouter();
@@ -19,24 +28,54 @@ const loadError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const busy = ref(false);
 
+// Teilnehmer
+const guestName = ref('');
+
 // Formular für neue Positionen
+const mode = ref<'single' | 'shared'>('single');
 const playerChoice = ref('');
 const newPlayerName = ref('');
+const shareIds = ref<number[]>([]);
+const containedIn = ref('');
 const itemName = ref('');
 const quantity = ref(1);
 const priceText = ref('');
 /** Preis von Hand geändert? Dann überschreibt die Artikelauswahl ihn nicht mehr */
 const priceTouched = ref(false);
 
-const editable = computed(() => evening.value?.can.edit ?? false);
+// Anteile einer geteilten Position bearbeiten
+const editingSharesOf = ref<number | null>(null);
+const editShareIds = ref<number[]>([]);
 
-const sortedItems = computed(() =>
-  [...(evening.value?.items ?? [])].sort((a, b) => a.playerName.localeCompare(b.playerName) || a.id - b.id),
-);
+// Freigabe
+const recipientChoice = ref('');
+
+const editable = computed(() => evening.value?.can.edit ?? false);
+const attendees = computed(() => evening.value?.attendees ?? []);
+const attendeeIds = computed(() => new Set(attendees.value.map((a) => a.playerId)));
+const sharedItems = computed(() => evening.value?.items.filter((i) => i.shared) ?? []);
+const me = computed(() => attendees.value.find((a) => a.isMe) ?? null);
+
+/** Geteilte Positionen zuerst, dann nach Person; Abzüge direkt unter "ihrer" geteilten Position */
+const sortedItems = computed(() => {
+  const items = evening.value?.items ?? [];
+  const shared = items.filter((i) => i.shared);
+  const single = items.filter((i) => !i.shared).sort((a, b) => a.playerName!.localeCompare(b.playerName!) || a.id - b.id);
+  return [
+    ...shared.flatMap((s) => [s, ...single.filter((i) => i.containedInId === s.id)]),
+    ...single.filter((i) => i.containedInId === null),
+  ];
+});
+
+const recipientCandidates = computed(() => attendees.value.filter((a) => a.hasAccount));
 
 const formError = computed(() => {
-  if (!playerChoice.value) return 'Bitte eine Person wählen.';
-  if (playerChoice.value === NEW_PLAYER && !newPlayerName.value.trim()) return 'Name der neuen Person fehlt.';
+  if (mode.value === 'single') {
+    if (!playerChoice.value) return 'Bitte eine Person wählen.';
+    if (playerChoice.value === NEW_PLAYER && !newPlayerName.value.trim()) return 'Name der neuen Person fehlt.';
+  } else if (shareIds.value.length === 0) {
+    return 'Mindestens eine Person muss mitzahlen.';
+  }
   if (!itemName.value.trim()) return 'Bitte einen Artikel eingeben.';
   if (!Number.isInteger(quantity.value) || quantity.value < 1) return 'Die Menge muss mindestens 1 sein.';
   if (parseEuro(priceText.value) === null) return 'Bitte einen Preis wie 4,80 eingeben.';
@@ -47,11 +86,20 @@ async function loadMenu() {
   menu.value = evening.value?.location ? await api.menu(evening.value.location.id) : [];
 }
 
+function applyEvening(e: Evening) {
+  evening.value = e;
+  // Vorauswahl für die Freigabe: der Besitzer selbst, sonst der Erste mit Konto
+  if (!recipientCandidates.value.some((a) => String(a.playerId) === recipientChoice.value)) {
+    const preferred = (e.isOwner && recipientCandidates.value.find((a) => a.isMe)) || recipientCandidates.value[0];
+    recipientChoice.value = preferred ? String(preferred.playerId) : '';
+  }
+}
+
 async function load() {
   try {
     const e = await api.getEvening(props.id);
     [players.value, locations.value] = await Promise.all([api.listPlayers(e.groupId), api.listLocations()]);
-    evening.value = e;
+    applyEvening(e);
     await loadMenu();
     loadError.value = null;
   } catch (err) {
@@ -65,12 +113,41 @@ async function run(action: () => Promise<Evening | void>) {
   error.value = null;
   try {
     const result = await action();
-    if (result) evening.value = result;
+    if (result) applyEvening(result);
   } catch (err) {
     error.value = (err as Error).message;
   } finally {
     busy.value = false;
   }
+}
+
+// --- Teilnehmer ---
+
+function toggleAttendee(player: Player, checked: boolean) {
+  void run(() => (checked ? api.addAttendee(props.id, { playerId: player.id }) : api.removeAttendee(props.id, player.id)));
+}
+
+function addGuest() {
+  const name = guestName.value.trim();
+  if (!name) return;
+  void run(async () => {
+    const result = await api.addAttendee(props.id, { newPlayerName: name });
+    players.value = await api.listPlayers(result.groupId);
+    guestName.value = '';
+    return result;
+  });
+}
+
+function attendeeLocked(playerId: number): boolean {
+  return attendees.value.find((a) => a.playerId === playerId)?.locked ?? false;
+}
+
+// --- Neue Position ---
+
+function setMode(next: 'single' | 'shared') {
+  mode.value = next;
+  // Geteilt: standardmäßig zahlen alle Teilnehmer mit
+  if (next === 'shared') shareIds.value = attendees.value.map((a) => a.playerId);
 }
 
 function onItemInput() {
@@ -84,10 +161,17 @@ function onPlayerChange() {
 
 async function addConsumption() {
   if (!evening.value || formError.value) return;
-  const isNew = playerChoice.value === NEW_PLAYER;
+  const isNew = mode.value === 'single' && playerChoice.value === NEW_PLAYER;
   await run(async () => {
-    const result = await api.addConsumption(evening.value!.id, {
-      ...(isNew ? { newPlayerName: newPlayerName.value.trim() } : { playerId: Number(playerChoice.value) }),
+    const target =
+      mode.value === 'shared'
+        ? { sharedWith: shareIds.value }
+        : {
+            ...(isNew ? { newPlayerName: newPlayerName.value.trim() } : { playerId: Number(playerChoice.value) }),
+            ...(containedIn.value ? { containedInId: Number(containedIn.value) } : {}),
+          };
+    const result = await api.addConsumption(props.id, {
+      ...target,
       itemName: itemName.value.trim(),
       quantity: quantity.value,
       unitCents: parseEuro(priceText.value)!,
@@ -104,48 +188,42 @@ async function addConsumption() {
     quantity.value = 1;
     priceText.value = '';
     priceTouched.value = false;
+    containedIn.value = '';
     return result;
   });
 }
+
+// --- Positionen bearbeiten ---
 
 /** Mengenänderungen nacheinander senden, damit schnelle Klicks sich nicht überholen */
 let quantityQueue: Promise<void> = Promise.resolve();
 let pendingQuantity = 0;
 
-/** Ändert die Menge sofort in der Anzeige (ohne die Seite zu sperren) und speichert im Hintergrund. */
+/** Ändert die Menge sofort in der Anzeige (ohne die Seite zu sperren) und speichert im Hintergrund.
+ *  Die Beträge pro Person kommen mit der Antwort vom Server. */
 function changeQuantity(item: EveningItem, delta: number) {
   const next = item.quantity + delta;
   if (next < 1) {
     removeItem(item);
     return;
   }
-  setQuantityLocally(item.id, next);
+  const e = evening.value!;
+  const local = e.items.find((i) => i.id === item.id)!;
+  local.quantity = next;
+  local.totalCents = next * local.unitCents;
+  e.totalCents = e.items.filter((i) => i.containedInId === null).reduce((sum, i) => sum + i.totalCents, 0);
   pendingQuantity++;
   quantityQueue = quantityQueue.then(async () => {
     try {
       const result = await api.updateConsumption(item.id, { quantity: next });
       // Erst nach der letzten Änderung den Stand vom Server übernehmen, sonst springt die Zahl zurück
-      if (--pendingQuantity === 0) evening.value = result;
+      if (--pendingQuantity === 0) applyEvening(result);
     } catch (err) {
       pendingQuantity--;
       error.value = (err as Error).message;
-      evening.value = await api.getEvening(props.id).catch(() => evening.value);
+      applyEvening(await api.getEvening(props.id).catch(() => evening.value!));
     }
   });
-}
-
-function setQuantityLocally(itemId: number, quantity: number) {
-  const e = evening.value;
-  const item = e?.items.find((i) => i.id === itemId);
-  if (!e || !item) return;
-  item.quantity = quantity;
-  item.totalCents = quantity * item.unitCents;
-  for (const t of e.totals) {
-    t.totalCents = e.items.filter((i) => i.playerId === t.playerId).reduce((sum, i) => sum + i.totalCents, 0);
-  }
-  // Gleiche Reihenfolge wie vom Server
-  e.totals.sort((a, b) => b.totalCents - a.totalCents || a.playerName.localeCompare(b.playerName));
-  e.totalCents = e.items.reduce((sum, i) => sum + i.totalCents, 0);
 }
 
 function changePrice(item: EveningItem) {
@@ -160,10 +238,34 @@ function changePrice(item: EveningItem) {
 }
 
 function removeItem(item: EveningItem) {
-  if (confirm(`${item.quantity} × ${item.itemName} von ${item.playerName} entfernen?`)) {
+  const who = item.shared ? 'geteilt' : `von ${item.playerName}`;
+  if (confirm(`${item.quantity} × ${item.itemName} (${who}) entfernen?`)) {
     void run(() => api.deleteConsumption(item.id));
   }
 }
+
+function changeContainedIn(item: EveningItem, value: string) {
+  void run(() => api.updateConsumption(item.id, { containedInId: value ? Number(value) : null }));
+}
+
+function startEditShares(item: EveningItem) {
+  editingSharesOf.value = item.id;
+  editShareIds.value = item.shares.map((s) => s.playerId);
+}
+
+function saveShares(item: EveningItem) {
+  void run(async () => {
+    const result = await api.updateConsumption(item.id, { sharedWith: editShareIds.value });
+    editingSharesOf.value = null;
+    return result;
+  });
+}
+
+function containerName(id: number | null): string {
+  return evening.value?.items.find((i) => i.id === id)?.itemName ?? '';
+}
+
+// --- Abend ---
 
 function saveDate(e: Event) {
   const date = (e.target as HTMLInputElement).value;
@@ -192,6 +294,27 @@ async function deleteEvening() {
   });
 }
 
+// --- Abrechnung ---
+
+function bill() {
+  const recipient = attendees.value.find((a) => String(a.playerId) === recipientChoice.value);
+  if (!recipient) return;
+  const text =
+    `Abend zur Zahlung freigeben? Danach lassen sich Positionen und Teilnehmer nicht mehr ändern.\n\n` +
+    `Das Geld bekommt ${recipient.playerName}.`;
+  if (confirm(text)) void run(() => api.billEvening(props.id, recipient.playerId));
+}
+
+function reopen() {
+  if (confirm('Abend wieder öffnen? Positionen und Teilnehmer lassen sich dann wieder ändern.')) {
+    void run(() => api.reopenEvening(props.id));
+  }
+}
+
+function togglePaid(a: EveningAttendee) {
+  void run(() => api.markPaid(props.id, a.playerId, !a.paid));
+}
+
 void load();
 </script>
 
@@ -203,8 +326,118 @@ void load();
     <h2>
       Abend vom {{ formatDate(evening.date) }}
       <small v-if="evening.label" class="muted">· {{ evening.label }}</small>
+      <span class="status" :class="`status-${evening.status}`">{{ EVENING_STATUS_LABELS[evening.status] }}</span>
     </h2>
 
+    <p v-if="error" class="msg-error">{{ error }}</p>
+
+    <!-- Abgerechnet: eigener Anteil zuerst -->
+    <article v-if="evening.status !== 'open' && me && !me.isRecipient && me.amountCents > 0" class="my-share">
+      <header>Dein Anteil</header>
+      <p class="my-amount">{{ formatEuro(me.amountCents) }}</p>
+      <p v-if="me.paid" class="msg-ok">
+        Bezahlt<template v-if="me.paidAt"> am {{ formatDateTime(me.paidAt) }}</template>
+        <template v-if="me.paidBy && me.paidBy !== session.me?.user.username"> (abgehakt von {{ me.paidBy }})</template>.
+      </p>
+      <p v-else class="muted">An {{ evening.recipient?.playerName }}, der die Rechnung bezahlt hat.</p>
+      <div class="actions">
+        <a
+          v-if="!me.paid && evening.recipient?.paypalMe"
+          :href="paypalLink(evening.recipient.paypalMe, me.amountCents)"
+          target="_blank"
+          rel="noopener"
+          role="button"
+        >
+          Mit PayPal bezahlen
+        </a>
+        <button
+          v-if="me.canMarkPaid"
+          type="button"
+          :class="{ secondary: !me.paid, outline: true }"
+          :disabled="busy"
+          @click="togglePaid(me)"
+        >
+          {{ me.paid ? 'Doch nicht bezahlt' : 'Als bezahlt markieren' }}
+        </button>
+      </div>
+      <small v-if="!me.paid && !evening.recipient?.paypalMe" class="muted">
+        {{ evening.recipient?.playerName }} hat keinen PayPal.Me-Namen hinterlegt – bitte anders bezahlen und dann abhaken.
+      </small>
+    </article>
+
+    <!-- Abrechnung: Übersicht pro Person -->
+    <article v-if="attendees.length">
+      <header>
+        {{ evening.status === 'open' ? 'Teilnehmer & Beträge' : 'Abrechnung' }}
+        <small v-if="evening.status !== 'open' && evening.recipient" class="muted">
+          · Geld an {{ evening.recipient.playerName }}
+        </small>
+      </header>
+      <div class="overflow-auto">
+        <table class="totals">
+          <tbody>
+            <tr v-for="a in attendees" :key="a.playerId" :class="{ me: a.isMe }">
+              <td>
+                {{ a.playerName }}
+                <small v-if="a.isRecipient && evening.status !== 'open'" class="muted"> (Empfänger)</small>
+                <small v-else-if="!a.hasAccount" class="muted"> (Gast)</small>
+              </td>
+              <td class="num">{{ formatEuro(a.amountCents) }}</td>
+              <td v-if="evening.status !== 'open'" class="paid-cell">
+                <template v-if="a.isRecipient">–</template>
+                <span v-else-if="a.paid" class="msg-ok" :title="a.paidAt ? `${formatDateTime(a.paidAt)}${a.paidBy ? ' von ' + a.paidBy : ''}` : ''">
+                  ✓ bezahlt
+                </span>
+                <span v-else class="msg-warn">offen</span>
+                <small v-if="a.paidCentsDiffer" class="msg-warn"> · Betrag hat sich danach geändert</small>
+              </td>
+              <td v-if="evening.status !== 'open'">
+                <button
+                  v-if="a.canMarkPaid && !a.isMe"
+                  type="button"
+                  class="small secondary outline"
+                  :disabled="busy"
+                  @click="togglePaid(a)"
+                >
+                  {{ a.paid ? 'Zurücknehmen' : 'Als erhalten markieren' }}
+                </button>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row">Gesamt</th>
+              <th class="num">{{ formatEuro(evening.totalCents) }}</th>
+              <th v-if="evening.status !== 'open'" colspan="2">
+                <span v-if="evening.openCents" class="msg-warn">{{ formatEuro(evening.openCents) }} offen</span>
+                <span v-else class="msg-ok">alles bezahlt</span>
+              </th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p v-for="(p, i) in evening.problems" :key="i" class="msg-error">{{ p }}</p>
+
+      <div v-if="evening.can.bill && evening.items.length" class="bill-form">
+        <label>
+          Geld bekommt
+          <select v-model="recipientChoice" :disabled="busy">
+            <option v-for="a in recipientCandidates" :key="a.playerId" :value="String(a.playerId)">{{ a.playerName }}</option>
+          </select>
+          <small v-if="recipientCandidates.length === 0" class="msg-warn">
+            Es braucht einen Teilnehmer mit Benutzerkonto, der das Geld bekommt.
+          </small>
+        </label>
+        <button type="button" :disabled="busy || !recipientChoice || evening.problems.length > 0" @click="bill">
+          Zur Zahlung freigeben
+        </button>
+      </div>
+      <button v-if="evening.can.reopen" type="button" class="secondary outline small" :disabled="busy" @click="reopen">
+        Wieder öffnen
+      </button>
+    </article>
+
+    <!-- Läuft: Stammdaten, Teilnehmer, Eintragen -->
     <article>
       <div class="grid">
         <label>
@@ -220,9 +453,6 @@ void load();
             @update:model-value="saveLocation"
             @created="(l) => locations.push(l)"
           />
-          <small v-if="editable && evening.items.length > 0" class="muted">
-            Lässt sich nur ändern, solange kein Verzehr eingetragen ist.
-          </small>
         </label>
         <label>
           Bezeichnung <small class="muted">(optional)</small>
@@ -235,53 +465,99 @@ void load();
           />
         </label>
       </div>
-      <small v-if="evening.createdBy" class="muted">Angelegt von {{ evening.createdBy }}</small>
+      <small v-if="evening.owner" class="muted">Angelegt von {{ evening.owner }}</small>
     </article>
 
-    <p v-if="error" class="msg-error">{{ error }}</p>
+    <article v-if="editable">
+      <header>Wer ist dabei?</header>
+      <div class="attendee-list">
+        <label v-for="p in players" :key="p.id" :title="attendeeLocked(p.id) ? 'Hat schon Positionen oder Anteile' : ''">
+          <input
+            type="checkbox"
+            :checked="attendeeIds.has(p.id)"
+            :disabled="busy || attendeeLocked(p.id)"
+            @change="toggleAttendee(p, ($event.target as HTMLInputElement).checked)"
+          />
+          {{ p.name }}
+        </label>
+      </div>
+      <form class="inline-form" @submit.prevent="addGuest">
+        <input v-model="guestName" maxlength="40" placeholder="Gast hinzufügen, z. B. Gerd" :disabled="busy" />
+        <button type="submit" class="secondary outline" :disabled="busy || !guestName.trim()">+ Gast</button>
+      </form>
+    </article>
 
     <article v-if="editable">
-      <header>Verzehr eintragen</header>
+      <header>Position eintragen</header>
       <p v-if="!evening.location" class="msg-warn">Bitte zuerst oben eine Location wählen – die Karte gehört zur Location.</p>
-      <form v-else class="add-form" @submit.prevent="addConsumption">
-        <label>
-          Person
-          <select v-model="playerChoice" :disabled="busy" @change="onPlayerChange">
-            <option value="">– bitte wählen –</option>
-            <option v-for="p in players" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
-            <option :value="NEW_PLAYER">+ Neue Person …</option>
-          </select>
-        </label>
-        <label v-if="playerChoice === NEW_PLAYER">
-          Name
-          <input v-model="newPlayerName" maxlength="40" :disabled="busy" />
-        </label>
-        <label class="item">
-          Artikel
-          <input
-            v-model="itemName"
-            list="menu-items"
-            maxlength="60"
-            autocomplete="off"
-            placeholder="z. B. Pils 0,5"
-            :disabled="busy"
-            @input="onItemInput"
-          />
-          <datalist id="menu-items">
-            <option v-for="m in menu" :key="m.id" :value="m.name">{{ formatEuro(m.priceCents) }}</option>
-          </datalist>
-        </label>
-        <label class="qty">
-          Menge
-          <input v-model.number="quantity" type="number" min="1" max="99" :disabled="busy" />
-        </label>
-        <label class="price">
-          Einzelpreis €
-          <input v-model="priceText" inputmode="decimal" placeholder="4,80" :disabled="busy" @input="priceTouched = true" />
-        </label>
-        <button type="submit" :aria-busy="busy" :disabled="busy || !!formError" :title="formError ?? ''">Eintragen</button>
-      </form>
-      <small class="muted">Neue Artikel landen automatisch auf der Karte von {{ evening.location?.name }}.</small>
+      <template v-else>
+        <div role="group" class="mode">
+          <button type="button" :class="{ outline: mode !== 'single' }" @click="setMode('single')">Für eine Person</button>
+          <button type="button" :class="{ outline: mode !== 'shared' }" @click="setMode('shared')">Geteilt</button>
+        </div>
+        <form class="add-form" @submit.prevent="addConsumption">
+          <template v-if="mode === 'single'">
+            <label>
+              Person
+              <select v-model="playerChoice" :disabled="busy" @change="onPlayerChange">
+                <option value="">– bitte wählen –</option>
+                <option v-for="a in attendees" :key="a.playerId" :value="String(a.playerId)">{{ a.playerName }}</option>
+                <option :value="NEW_PLAYER">+ Neue Person …</option>
+              </select>
+            </label>
+            <label v-if="playerChoice === NEW_PLAYER">
+              Name
+              <input v-model="newPlayerName" maxlength="40" :disabled="busy" />
+            </label>
+          </template>
+          <label class="item">
+            Artikel
+            <input
+              v-model="itemName"
+              list="menu-items"
+              maxlength="60"
+              autocomplete="off"
+              :placeholder="mode === 'shared' ? 'z. B. Bowling' : 'z. B. Pils 0,5'"
+              :disabled="busy"
+              @input="onItemInput"
+            />
+            <datalist id="menu-items">
+              <option v-for="m in menu" :key="m.id" :value="m.name">{{ formatEuro(m.priceCents) }}</option>
+            </datalist>
+          </label>
+          <label class="qty">
+            Menge
+            <input v-model.number="quantity" type="number" min="1" max="99" :disabled="busy" />
+          </label>
+          <label class="price">
+            Einzelpreis €
+            <input v-model="priceText" inputmode="decimal" placeholder="4,80" :disabled="busy" @input="priceTouched = true" />
+          </label>
+          <label v-if="mode === 'single' && sharedItems.length" class="contained">
+            Steckt in
+            <select v-model="containedIn" :disabled="busy">
+              <option value="">– nein –</option>
+              <option v-for="s in sharedItems" :key="s.id" :value="String(s.id)">{{ s.itemName }}</option>
+            </select>
+          </label>
+          <button type="submit" :aria-busy="busy" :disabled="busy || !!formError" :title="formError ?? ''">Eintragen</button>
+        </form>
+        <fieldset v-if="mode === 'shared'" class="share-list">
+          <legend>Wer zahlt mit? <small class="muted">(zu gleichen Teilen)</small></legend>
+          <label v-for="a in attendees" :key="a.playerId">
+            <input v-model="shareIds" type="checkbox" :value="a.playerId" :disabled="busy" />
+            {{ a.playerName }}
+          </label>
+        </fieldset>
+        <small class="muted">
+          <template v-if="mode === 'shared'">Zum Beispiel die Bahnen: der Betrag wird gleichmäßig verteilt.</template>
+          <template v-else-if="sharedItems.length">
+            „Steckt in“: z. B. Leihschuhe, die auf der Rechnung im Bowling-Betrag enthalten sind. Die Person zahlt sie
+            allein, und sie werden vor dem Verteilen vom Bowling abgezogen.
+          </template>
+          Neue Artikel landen automatisch auf der Karte von {{ evening.location?.name }}.
+        </small>
+      </template>
     </article>
 
     <article>
@@ -291,7 +567,7 @@ void load();
         <table>
           <thead>
             <tr>
-              <th>Person</th>
+              <th>Wer</th>
               <th>Artikel</th>
               <th class="num">Menge</th>
               <th class="num">Einzelpreis</th>
@@ -300,8 +576,46 @@ void load();
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in sortedItems" :key="item.id">
-              <td>{{ item.playerName }}</td>
+            <tr v-for="item in sortedItems" :key="item.id" :class="{ contained: item.containedInId !== null }">
+              <td>
+                <template v-if="item.shared">
+                  <template v-if="editingSharesOf === item.id">
+                    <div class="share-edit">
+                      <label v-for="a in attendees" :key="a.playerId">
+                        <input v-model="editShareIds" type="checkbox" :value="a.playerId" :disabled="busy" />
+                        {{ a.playerName }}
+                      </label>
+                    </div>
+                    <div class="actions">
+                      <button type="button" class="small" :disabled="busy || editShareIds.length === 0" @click="saveShares(item)">
+                        Speichern
+                      </button>
+                      <button type="button" class="small secondary outline" @click="editingSharesOf = null">Abbrechen</button>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <strong>geteilt</strong>
+                    <small class="muted"> · {{ item.shares.map((s) => s.playerName).join(', ') }}</small>
+                    <a v-if="editable" href="#" class="small-link" @click.prevent="startEditShares(item)">ändern</a>
+                  </template>
+                </template>
+                <template v-else>
+                  {{ item.playerName }}
+                  <template v-if="editable && sharedItems.length">
+                    <select
+                      class="contained-select"
+                      :value="item.containedInId === null ? '' : String(item.containedInId)"
+                      :disabled="busy"
+                      :aria-label="`${item.itemName} steckt in`"
+                      @change="changeContainedIn(item, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="">eigene Position</option>
+                      <option v-for="s in sharedItems" :key="s.id" :value="String(s.id)">steckt in {{ s.itemName }}</option>
+                    </select>
+                  </template>
+                  <small v-else-if="item.containedInId !== null" class="muted"> · steckt in {{ containerName(item.containedInId) }}</small>
+                </template>
+              </td>
               <td>{{ item.itemName }}</td>
               <td class="num qty-cell">
                 <button
@@ -330,7 +644,12 @@ void load();
                 <a v-if="editable" href="#" title="Preis ändern" @click.prevent="changePrice(item)">{{ formatEuro(item.unitCents) }}</a>
                 <template v-else>{{ formatEuro(item.unitCents) }}</template>
               </td>
-              <td class="num">{{ formatEuro(item.totalCents) }}</td>
+              <td class="num">
+                {{ formatEuro(item.totalCents) }}
+                <small v-if="item.shared && item.netCents !== null && item.netCents !== item.totalCents" class="muted net">
+                  verteilt: {{ formatEuro(item.netCents) }}
+                </small>
+              </td>
               <td v-if="editable">
                 <button type="button" class="small secondary outline" :disabled="busy" @click="removeItem(item)">Entfernen</button>
               </td>
@@ -338,24 +657,6 @@ void load();
           </tbody>
         </table>
       </div>
-    </article>
-
-    <article v-if="evening.totals.length">
-      <header>Summe pro Person</header>
-      <table class="totals">
-        <tbody>
-          <tr v-for="t in evening.totals" :key="t.playerId">
-            <td>{{ t.playerName }}</td>
-            <td class="num">{{ formatEuro(t.totalCents) }}</td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr>
-            <th scope="row">Gesamt</th>
-            <th class="num">{{ formatEuro(evening.totalCents) }}</th>
-          </tr>
-        </tfoot>
-      </table>
     </article>
 
     <button
@@ -373,6 +674,74 @@ void load();
 <style scoped>
 .muted {
   color: var(--pico-muted-color);
+}
+h2 .status {
+  margin-left: 0.5rem;
+  font-size: 0.6em;
+  vertical-align: middle;
+}
+.status {
+  font-weight: 600;
+}
+.status-open {
+  color: var(--status-running);
+}
+.status-billed {
+  color: var(--status-review);
+}
+.status-settled {
+  color: var(--status-approved);
+}
+.my-share {
+  border-left: 4px solid var(--status-review);
+}
+.my-amount {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+.actions a[role='button'],
+.actions button {
+  width: auto;
+  margin-bottom: 0;
+}
+.attendee-list,
+.share-list,
+.share-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1.25rem;
+}
+.attendee-list label,
+.share-list label,
+.share-edit label {
+  white-space: nowrap;
+}
+.share-list {
+  margin-bottom: 0.5rem;
+}
+.share-edit {
+  margin-bottom: 0.5rem;
+  font-size: 0.9em;
+}
+.inline-form {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+}
+.inline-form input {
+  flex: 1;
+  min-width: 12rem;
+  margin-bottom: 0;
+}
+.inline-form button {
+  width: auto;
+  margin-bottom: 0;
+}
+.mode {
+  max-width: 22rem;
 }
 .add-form {
   display: flex;
@@ -405,6 +774,9 @@ void load();
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.net {
+  display: block;
+}
 .qty-cell {
   display: flex;
   gap: 0.4rem;
@@ -415,8 +787,44 @@ void load();
   min-width: 1.5em;
   text-align: center;
 }
+tr.contained td:first-child {
+  padding-left: 1.5rem;
+}
+.contained-select {
+  display: block;
+  width: auto;
+  margin: 0.25rem 0 0;
+  padding: 0.15rem 2rem 0.15rem 0.5rem;
+  font-size: 0.8em;
+  height: auto;
+}
+.small-link {
+  margin-left: 0.4rem;
+  font-size: 0.85em;
+}
 .totals {
-  max-width: 24rem;
-  margin-bottom: 0;
+  margin-bottom: 0.5rem;
+}
+.totals tr.me td {
+  font-weight: 700;
+}
+.paid-cell {
+  white-space: nowrap;
+}
+.bill-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1rem;
+  align-items: flex-end;
+  margin-top: 1rem;
+}
+.bill-form label {
+  flex: 1;
+  min-width: 12rem;
+  max-width: 20rem;
+}
+.bill-form button {
+  width: auto;
+  margin-bottom: var(--pico-spacing);
 }
 </style>

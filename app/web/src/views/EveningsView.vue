@@ -3,7 +3,7 @@ import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api';
 import LocationSelect from '../components/LocationSelect.vue';
-import { formatDate, formatDateTime, formatEuro, todayYmd } from '../format';
+import { EVENING_STATUS_LABELS, formatDate, formatDateTime, formatEuro, todayYmd } from '../format';
 import { currentGroup, session } from '../session';
 import type { EveningSummary, Location } from '../types';
 
@@ -100,6 +100,7 @@ watch(() => session.groupId, load, { immediate: true });
             <th>Location</th>
             <th class="num">Personen</th>
             <th class="num">Summe</th>
+            <th>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -112,6 +113,13 @@ watch(() => session.groupId, load, { immediate: true });
             <td>{{ e.location?.name ?? '–' }}</td>
             <td class="num">{{ e.players || '–' }}</td>
             <td class="num">{{ e.positions ? formatEuro(e.totalCents) : '–' }}</td>
+            <td>
+              <span class="status" :class="`status-${e.status}`">{{ EVENING_STATUS_LABELS[e.status] }}</span>
+              <RouterLink v-if="e.myOpenCents" :to="{ name: 'evening', params: { id: e.id } }" class="my-open">
+                du zahlst {{ formatEuro(e.myOpenCents) }}
+              </RouterLink>
+              <small v-else-if="e.status === 'billed'" class="muted"> · {{ formatEuro(e.openCents) }} offen</small>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -126,5 +134,23 @@ watch(() => session.groupId, load, { immediate: true });
 .num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+.status {
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.status-open {
+  color: var(--status-running);
+}
+.status-billed {
+  color: var(--status-review);
+}
+.status-settled {
+  color: var(--status-approved);
+}
+.my-open {
+  margin-left: 0.4rem;
+  color: var(--status-failed);
+  font-weight: 600;
 }
 </style>

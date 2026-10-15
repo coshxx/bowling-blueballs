@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post, Res, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Response } from 'express';
-import { LoginDto, RegisterDto } from './auth.dto';
+import { LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
 import { AuthService } from './auth.service';
 import { CurrentUser, Public } from './decorators';
 import { clearSession, SessionUser, writeSession } from './session';
@@ -41,5 +41,10 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: SessionUser) {
     return this.auth.me(user);
+  }
+
+  @Patch('profile')
+  updateProfile(@CurrentUser() user: SessionUser, @Body() dto: UpdateProfileDto) {
+    return this.auth.updateProfile(user, dto);
   }
 }

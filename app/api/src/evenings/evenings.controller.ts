@@ -1,7 +1,15 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators';
 import type { SessionUser } from '../auth/session';
-import { AddConsumptionDto, CreateEveningDto, UpdateConsumptionDto, UpdateEveningDto } from './evenings.dto';
+import {
+  AddAttendeeDto,
+  AddConsumptionDto,
+  BillDto,
+  CreateEveningDto,
+  MarkPaidDto,
+  UpdateConsumptionDto,
+  UpdateEveningDto,
+} from './evenings.dto';
 import { EveningsService } from './evenings.service';
 
 @Controller()
@@ -32,6 +40,43 @@ export class EveningsController {
   @HttpCode(204)
   delete(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number) {
     return this.evenings.delete(user, id);
+  }
+
+  @Post('evenings/:id/attendees')
+  addAttendee(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number, @Body() dto: AddAttendeeDto) {
+    return this.evenings.addAttendee(user, id, dto);
+  }
+
+  @Delete('evenings/:id/attendees/:playerId')
+  removeAttendee(
+    @CurrentUser() user: SessionUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('playerId', ParseIntPipe) playerId: number,
+  ) {
+    return this.evenings.removeAttendee(user, id, playerId);
+  }
+
+  @Post('evenings/:id/attendees/:playerId/paid')
+  @HttpCode(200)
+  markPaid(
+    @CurrentUser() user: SessionUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Param('playerId', ParseIntPipe) playerId: number,
+    @Body() dto: MarkPaidDto,
+  ) {
+    return this.evenings.markPaid(user, id, playerId, dto.paid);
+  }
+
+  @Post('evenings/:id/bill')
+  @HttpCode(200)
+  bill(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number, @Body() dto: BillDto) {
+    return this.evenings.bill(user, id, dto);
+  }
+
+  @Post('evenings/:id/reopen')
+  @HttpCode(200)
+  reopen(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number) {
+    return this.evenings.reopen(user, id);
   }
 
   @Post('evenings/:id/consumptions')

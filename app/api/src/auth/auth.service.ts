@@ -8,6 +8,7 @@ import type { SessionUser } from './session';
 export interface MeResponse {
   user: SessionUser;
   groups: { id: number; name: string; canUpload: boolean }[];
+  profile: { paypalMe: string | null };
 }
 
 @Injectable()
@@ -43,10 +44,12 @@ export class AuthService {
   }
 
   async me(user: SessionUser): Promise<MeResponse> {
+    const { paypalMe } = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { paypalMe: true } });
+    const profile = { paypalMe };
     if (user.isAdmin) {
       // Admins sehen alle Gruppen und dürfen überall hochladen
       const groups = await this.prisma.group.findMany({ orderBy: { name: 'asc' } });
-      return { user, groups: groups.map((g) => ({ id: g.id, name: g.name, canUpload: true })) };
+      return { user, groups: groups.map((g) => ({ id: g.id, name: g.name, canUpload: true })), profile };
     }
     const memberships = await this.prisma.membership.findMany({
       where: { userId: user.id },
@@ -56,6 +59,12 @@ export class AuthService {
     return {
       user,
       groups: memberships.map((m) => ({ id: m.group.id, name: m.group.name, canUpload: m.canUpload })),
+      profile,
     };
+  }
+
+  async updateProfile(user: SessionUser, data: { paypalMe?: string | null }): Promise<MeResponse> {
+    await this.prisma.user.update({ where: { id: user.id }, data: { paypalMe: data.paypalMe || null } });
+    return this.me(user);
   }
 }

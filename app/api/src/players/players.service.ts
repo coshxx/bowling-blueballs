@@ -55,7 +55,8 @@ export class PlayersService {
     }
   }
 
-  /** Legt zwei Spieler zusammen: Spiele, Aliase und Verzehr wandern zum Ziel, der Quellspieler verschwindet. */
+  /** Legt zwei Spieler zusammen: Spiele, Aliase, Verzehr und Abend-Teilnahmen wandern zum Ziel,
+   *  der Quellspieler verschwindet. Waren beide am selben Abend, bleibt die Teilnahme des Ziels. */
   async merge(id: number, intoPlayerId: number) {
     if (id === intoPlayerId) {
       throw new BadRequestException('Ein Spieler kann nicht mit sich selbst zusammengelegt werden.');
@@ -65,13 +66,21 @@ export class PlayersService {
     if (source.groupId !== target.groupId) {
       throw new BadRequestException('Nur Spieler derselben Gruppe lassen sich zusammenlegen.');
     }
-    await this.prisma.$transaction([
-      this.prisma.game.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
-      this.prisma.playerAlias.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
-      this.prisma.consumption.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } }),
-      this.prisma.player.update({ where: { id: intoPlayerId }, data: { userId: target.userId ?? source.userId } }),
-      this.prisma.player.delete({ where: { id } }),
-    ]);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.game.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });
+      await tx.playerAlias.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });
+      await tx.consumption.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });
+      await tx.evening.updateMany({ where: { recipientId: id }, data: { recipientId: intoPlayerId } });
+      // Teilnahmen und Anteile haben zusammengesetzte Schlüssel: doppelte vorher entfernen
+      const targetEvenings = (await tx.eveningAttendee.findMany({ where: { playerId: intoPlayerId } })).map((a) => a.eveningId);
+      await tx.eveningAttendee.deleteMany({ where: { playerId: id, eveningId: { in: targetEvenings } } });
+      await tx.eveningAttendee.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });
+      const targetShares = (await tx.consumptionShare.findMany({ where: { playerId: intoPlayerId } })).map((s) => s.consumptionId);
+      await tx.consumptionShare.deleteMany({ where: { playerId: id, consumptionId: { in: targetShares } } });
+      await tx.consumptionShare.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });
+      await tx.player.update({ where: { id: intoPlayerId }, data: { userId: target.userId ?? source.userId } });
+      await tx.player.delete({ where: { id } });
+    });
   }
 
   async delete(id: number) {
@@ -79,8 +88,8 @@ export class PlayersService {
     if (await this.prisma.game.count({ where: { playerId: id } })) {
       throw new BadRequestException('Der Spieler hat freigegebene Spiele. Zusammenlegen statt löschen.');
     }
-    if (await this.prisma.consumption.count({ where: { playerId: id } })) {
-      throw new BadRequestException('Der Spieler hat eingetragenen Verzehr. Zusammenlegen statt löschen.');
+    if (await this.prisma.eveningAttendee.count({ where: { playerId: id } })) {
+      throw new BadRequestException('Der Spieler war bei Abenden dabei. Zusammenlegen statt löschen.');
     }
     await this.prisma.player.delete({ where: { id } });
   }

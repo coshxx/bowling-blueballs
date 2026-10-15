@@ -54,6 +54,7 @@ export const api = {
   login: (username: string, password: string) => request<MeResponse>('POST', '/auth/login', { username, password }),
   register: (username: string, password: string) => request<MeResponse>('POST', '/auth/register', { username, password }),
   logout: () => request<void>('POST', '/auth/logout'),
+  updateProfile: (data: { paypalMe: string | null }) => request<MeResponse>('PATCH', '/auth/profile', data),
 
   listEntries: (groupId: number, filter?: 'review') =>
     request<Entry[]>('GET', `/groups/${groupId}/entries${filter ? `?filter=${filter}` : ''}`),
@@ -93,9 +94,21 @@ export const api = {
   updateEvening: (id: number, data: { date?: string; locationId?: number | null; label?: string | null }) =>
     request<Evening>('PATCH', `/evenings/${id}`, data),
   deleteEvening: (id: number) => request<void>('DELETE', `/evenings/${id}`),
+  addAttendee: (eveningId: number, data: { playerId?: number; newPlayerName?: string }) =>
+    request<Evening>('POST', `/evenings/${eveningId}/attendees`, data),
+  removeAttendee: (eveningId: number, playerId: number) =>
+    request<Evening>('DELETE', `/evenings/${eveningId}/attendees/${playerId}`),
+  markPaid: (eveningId: number, playerId: number, paid: boolean) =>
+    request<Evening>('POST', `/evenings/${eveningId}/attendees/${playerId}/paid`, { paid }),
+  billEvening: (id: number, recipientId?: number) =>
+    request<Evening>('POST', `/evenings/${id}/bill`, recipientId ? { recipientId } : {}),
+  reopenEvening: (id: number) => request<Evening>('POST', `/evenings/${id}/reopen`),
   addConsumption: (eveningId: number, data: AddConsumption) =>
     request<Evening>('POST', `/evenings/${eveningId}/consumptions`, data),
-  updateConsumption: (id: number, data: { quantity?: number; unitCents?: number }) =>
+  updateConsumption: (
+    id: number,
+    data: { quantity?: number; unitCents?: number; sharedWith?: number[]; containedInId?: number | null },
+  ) =>
     request<Evening>('PATCH', `/consumptions/${id}`, data),
   deleteConsumption: (id: number) => request<Evening>('DELETE', `/consumptions/${id}`),
 

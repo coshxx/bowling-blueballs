@@ -2,24 +2,29 @@
 import { ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from './api';
+import { formatEuro } from './format';
 import { applySession, currentGroup, selectGroup, session } from './session';
 
 const router = useRouter();
 const route = useRoute();
 
-/** Fotos, die auf Freigabe warten – nach jedem Seitenwechsel neu gezählt */
+/** Fotos, die auf Freigabe warten, und was man selbst noch zahlen muss – nach jedem Seitenwechsel neu */
 const reviewCount = ref(0);
+const myOpenCents = ref(0);
 watch(
   [() => currentGroup.value?.id, () => route.fullPath],
   async ([groupId]) => {
     if (!groupId) {
       reviewCount.value = 0;
+      myOpenCents.value = 0;
       return;
     }
     try {
-      reviewCount.value = (await api.listEntries(groupId, 'review')).length;
+      const [review, evenings] = await Promise.all([api.listEntries(groupId, 'review'), api.listEvenings(groupId)]);
+      reviewCount.value = review.length;
+      myOpenCents.value = evenings.reduce((sum, e) => sum + e.myOpenCents, 0);
     } catch {
-      // Zähler ist nur ein Hinweis
+      // Zähler sind nur ein Hinweis
     }
   },
   { immediate: true },
@@ -41,7 +46,13 @@ function onGroupChange(e: Event) {
     <nav>
       <ul>
         <li><strong>🎳 Bowling</strong></li>
-        <li><RouterLink :to="{ name: 'evenings' }">Abende</RouterLink></li>
+        <li>
+          <RouterLink :to="{ name: 'evenings' }">
+            Abende<span v-if="myOpenCents" class="badge badge-pay" title="Du hast noch etwas zu bezahlen">{{
+              formatEuro(myOpenCents)
+            }}</span>
+          </RouterLink>
+        </li>
         <li>
           <RouterLink :to="{ name: 'entries' }">
             Fotos<span v-if="reviewCount" class="badge" :title="`${reviewCount} zur Freigabe`">{{ reviewCount }}</span>
@@ -57,7 +68,7 @@ function onGroupChange(e: Event) {
           </select>
         </li>
         <li v-else-if="currentGroup" class="muted">{{ currentGroup.name }}</li>
-        <li class="muted">{{ session.me.user.username }}</li>
+        <li><RouterLink :to="{ name: 'profile' }" class="muted" title="Profil">{{ session.me.user.username }}</RouterLink></li>
         <li><a href="#" @click.prevent="logout">Abmelden</a></li>
       </ul>
     </nav>
@@ -94,5 +105,8 @@ a.router-link-exact-active {
   font-weight: 700;
   line-height: 1.6;
   text-align: center;
+}
+.badge-pay {
+  background: var(--status-failed);
 }
 </style>

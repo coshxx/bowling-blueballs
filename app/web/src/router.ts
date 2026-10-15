@@ -16,6 +16,7 @@ export const router = createRouter({
     { path: '/fotos', name: 'entries', component: () => import('./views/EntriesView.vue') },
     { path: '/entries/:id', name: 'entry', component: () => import('./views/EntryView.vue'), props: (r) => ({ id: Number(r.params.id) }) },
     { path: '/stats', name: 'stats', component: () => import('./views/StatsView.vue') },
+    { path: '/profil', name: 'profile', component: () => import('./views/ProfileView.vue') },
     { path: '/admin', name: 'admin', component: () => import('./views/AdminView.vue'), meta: { admin: true } },
     {
       path: '/admin/groups/:id',
