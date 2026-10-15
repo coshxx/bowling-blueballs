@@ -56,6 +56,8 @@ export const api = {
   register: (username: string, password: string, inviteCode?: string) =>
     request<MeResponse>('POST', '/auth/register', { username, password, inviteCode }),
   logout: () => request<void>('POST', '/auth/logout'),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>('PATCH', '/auth/password', { currentPassword, newPassword }),
   updateProfile: (data: { paypalMe: string | null }) => request<MeResponse>('PATCH', '/auth/profile', data),
 
   listEntries: (groupId: number, filter?: 'review') =>
@@ -83,6 +85,7 @@ export const api = {
 
   listLocations: () => request<Location[]>('GET', '/locations'),
   createLocation: (name: string) => request<Location>('POST', '/locations', { name }),
+  sharedNames: (locationId: number) => request<string[]>('GET', `/locations/${locationId}/shared-names`),
   menu: (locationId: number, includeHidden = false) =>
     request<MenuItem[]>('GET', `/locations/${locationId}/menu${includeHidden ? '?hidden=true' : ''}`),
   updateMenuItem: (id: number, data: { name?: string; priceCents?: number; hidden?: boolean }) =>
@@ -113,6 +116,7 @@ export const api = {
   ) =>
     request<Evening>('PATCH', `/consumptions/${id}`, data),
   deleteConsumption: (id: number) => request<Evening>('DELETE', `/consumptions/${id}`),
+  setContained: (id: number, itemIds: number[]) => request<Evening>('PUT', `/consumptions/${id}/contained`, { itemIds }),
 
   stats: (groupId: number) => request<GroupStats>('GET', `/groups/${groupId}/stats`),
 

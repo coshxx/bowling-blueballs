@@ -142,7 +142,8 @@ export interface EveningItem {
   playerId: number | null;
   playerName: string | null;
   shares: { playerId: number; playerName: string }[];
-  menuItemId: number;
+  /** null bei geteilten Positionen, die nicht auf der Karte stehen */
+  menuItemId: number | null;
   itemName: string;
   quantity: number;
   unitCents: number;

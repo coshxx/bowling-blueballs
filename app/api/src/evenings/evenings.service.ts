@@ -30,6 +30,11 @@ const EVENING_INCLUDE = {
 type EveningWithRelations = Prisma.EveningGetPayload<{ include: typeof EVENING_INCLUDE }>;
 type Tx = Prisma.TransactionClient;
 
+/** Einzelpositionen heißen wie ihr Kartenartikel, geteilte tragen ihren Namen selbst */
+function itemName(c: { name: string | null; menuItem: { name: string } | null }): string {
+  return c.menuItem?.name ?? c.name ?? '';
+}
+
 @Injectable()
 export class EveningsService {
   constructor(
@@ -42,7 +47,7 @@ export class EveningsService {
     const ownerPlayerId = e.attendees.find((a) => a.player.userId !== null && a.player.userId === e.createdById)?.playerId ?? null;
     // Rest-Cent und "bezahlt" hängen am Empfänger; solange keiner gewählt ist, am Besitzer
     const recipientId = e.recipientId ?? ownerPlayerId;
-    const itemNames = new Map(e.consumptions.map((c) => [c.id, c.menuItem.name]));
+    const itemNames = new Map(e.consumptions.map((c) => [c.id, itemName(c)]));
     const bill = computeBill(
       e.consumptions.map((c) => ({
         id: c.id,
@@ -107,7 +112,7 @@ export class EveningsService {
         playerName: c.player?.name ?? null,
         shares: c.shares.map((s) => ({ playerId: s.playerId, playerName: s.player.name })),
         menuItemId: c.menuItemId,
-        itemName: c.menuItem.name,
+        itemName: itemName(c),
         quantity: c.quantity,
         unitCents: c.unitCents,
         totalCents: c.quantity * c.unitCents,
@@ -121,7 +126,8 @@ export class EveningsService {
       myOpenCents: billed ? attendees.filter((a) => a.isMe && !a.paid).reduce((sum, a) => sum + a.amountCents, 0) : 0,
       can: {
         edit: access.canUpload && e.status === 'open',
-        delete: access.canUpload && e.status === 'open' && e.consumptions.length === 0,
+        // Leere Abende darf jeder mit Upload-Recht löschen, laufende mit Positionen nur Besitzer und Admins
+        delete: access.canUpload && e.status === 'open' && (e.consumptions.length === 0 || isOwner || user.isAdmin),
         bill: (isOwner || user.isAdmin) && e.status === 'open',
         reopen: e.status === 'billed' && (user.isAdmin || (isOwner && !anyPaid)),
       },
@@ -205,10 +211,11 @@ export class EveningsService {
   }
 
   async delete(user: SessionUser, id: number) {
-    const { evening } = await this.loadOpen(user, id);
-    if (evening.consumptions.length) {
-      throw new ConflictException('Ein Abend lässt sich nur löschen, solange kein Verzehr eingetragen ist.');
+    const { evening, access } = await this.loadOpen(user, id);
+    if (!this.toDto(evening, user, access).can.delete) {
+      throw new ForbiddenException('Einen Abend mit Positionen kann nur sein Besitzer oder ein Admin löschen.');
     }
+    // Positionen, Anteile und Teilnehmer hängen per Cascade am Abend
     await this.prisma.evening.delete({ where: { id } });
   }
 
@@ -234,8 +241,9 @@ export class EveningsService {
 
   // --- Positionen ---
 
-  /** Trägt eine Position ein. Neue Artikel landen auf der Karte, der Preis wird zum neuen Vorschlag.
-   *  Einzelpositionen mit gleichem Spieler, Artikel, Preis und "steckt in" erhöhen die Menge. */
+  /** Trägt eine Position ein. Bei Einzelpositionen landen neue Artikel auf der Karte und der Preis wird zum
+   *  neuen Vorschlag; gleicher Spieler, Artikel, Preis und "steckt in" erhöhen die Menge.
+   *  Geteilte Positionen (z. B. Bahnen) bleiben der Karte fern, ihr Preis ist jedes Mal anders. */
   async addConsumption(user: SessionUser, eveningId: number, dto: AddConsumptionDto) {
     const { evening } = await this.loadOpen(user, eveningId);
     const locationId = evening.locationId;
@@ -252,19 +260,14 @@ export class EveningsService {
       if (shared) throw new BadRequestException('Nur Einzelpositionen können in einer geteilten Position stecken.');
       this.checkContainer(evening, dto.containedInId);
     }
-    const itemName = cleanName(dto.itemName);
+    const name = cleanName(dto.itemName);
 
     await this.prisma.$transaction(async (tx) => {
-      const item = await tx.menuItem.upsert({
-        where: { locationId_nameKey: { locationId, nameKey: nameKey(itemName) } },
-        create: { locationId, name: itemName, nameKey: nameKey(itemName), priceCents: dto.unitCents },
-        update: { priceCents: dto.unitCents, hidden: false },
-      });
       if (shared) {
         await tx.consumption.create({
           data: {
             eveningId,
-            menuItemId: item.id,
+            name,
             quantity: dto.quantity,
             unitCents: dto.unitCents,
             shares: { create: [...new Set(dto.sharedWith)].map((playerId) => ({ playerId })) },
@@ -272,6 +275,11 @@ export class EveningsService {
         });
         return;
       }
+      const item = await tx.menuItem.upsert({
+        where: { locationId_nameKey: { locationId, nameKey: nameKey(name) } },
+        create: { locationId, name, nameKey: nameKey(name), priceCents: dto.unitCents },
+        update: { priceCents: dto.unitCents, hidden: false },
+      });
       // Wer eine Position bekommt, wird automatisch Teilnehmer
       const playerId = await this.resolvePlayer(tx, evening.groupId, dto);
       await this.ensureAttendee(tx, eveningId, playerId);
@@ -311,11 +319,29 @@ export class EveningsService {
         await tx.consumptionShare.deleteMany({ where: { consumptionId: id } });
         await tx.consumptionShare.createMany({ data: [...new Set(dto.sharedWith)].map((playerId) => ({ consumptionId: id, playerId })) });
       }
-      // Ein geänderter Preis wird auch zum Vorschlag auf der Karte
-      if (dto.unitCents !== undefined) {
+      // Ein geänderter Preis wird auch zum Vorschlag auf der Karte (geteilte Positionen stehen nicht darauf)
+      if (dto.unitCents !== undefined && consumption.menuItemId !== null) {
         await tx.menuItem.update({ where: { id: consumption.menuItemId }, data: { priceCents: dto.unitCents } });
       }
     });
+    return this.get(user, consumption.eveningId);
+  }
+
+  /** Legt fest, welche Einzelpositionen in einer geteilten Position stecken (z. B. alle Leihschuhe in der Bahn). */
+  async setContained(user: SessionUser, id: number, itemIds: number[]) {
+    const consumption = await this.getConsumption(id);
+    const { evening } = await this.loadOpen(user, consumption.eveningId);
+    if (consumption.playerId !== null) {
+      throw new BadRequestException('Nur in geteilten Positionen können andere Positionen stecken.');
+    }
+    const ids = [...new Set(itemIds)];
+    if (ids.some((itemId) => !evening.consumptions.some((c) => c.id === itemId && c.playerId !== null))) {
+      throw new BadRequestException('Nur Einzelpositionen dieses Abends können in einer geteilten Position stecken.');
+    }
+    await this.prisma.$transaction([
+      this.prisma.consumption.updateMany({ where: { containedInId: id, id: { notIn: ids } }, data: { containedInId: null } }),
+      this.prisma.consumption.updateMany({ where: { id: { in: ids } }, data: { containedInId: id } }),
+    ]);
     return this.get(user, consumption.eveningId);
   }
 

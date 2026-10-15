@@ -24,6 +24,8 @@ const evening = ref<Evening | null>(null);
 const players = ref<Player[]>([]);
 const locations = ref<Location[]>([]);
 const menu = ref<MenuItem[]>([]);
+/** Namen geteilter Positionen an dieser Location (Vorschläge ohne Preis) */
+const sharedNames = ref<string[]>([]);
 const loadError = ref<string | null>(null);
 const error = ref<string | null>(null);
 const busy = ref(false);
@@ -47,6 +49,10 @@ const priceTouched = ref(false);
 const editingSharesOf = ref<number | null>(null);
 const editShareIds = ref<number[]>([]);
 
+// Enthaltene Einzelpositionen einer geteilten Position bearbeiten
+const editingContainedOf = ref<number | null>(null);
+const editContainedIds = ref<number[]>([]);
+
 // Freigabe
 const recipientChoice = ref('');
 
@@ -56,16 +62,42 @@ const attendeeIds = computed(() => new Set(attendees.value.map((a) => a.playerId
 const sharedItems = computed(() => evening.value?.items.filter((i) => i.shared) ?? []);
 const me = computed(() => attendees.value.find((a) => a.isMe) ?? null);
 
-/** Geteilte Positionen zuerst, dann nach Person; Abzüge direkt unter "ihrer" geteilten Position */
-const sortedItems = computed(() => {
-  const items = evening.value?.items ?? [];
-  const shared = items.filter((i) => i.shared);
-  const single = items.filter((i) => !i.shared).sort((a, b) => a.playerName!.localeCompare(b.playerName!) || a.id - b.id);
-  return [
-    ...shared.flatMap((s) => [s, ...single.filter((i) => i.containedInId === s.id)]),
-    ...single.filter((i) => i.containedInId === null),
-  ];
+const singleItems = computed(() => evening.value?.items.filter((i) => !i.shared) ?? []);
+
+/** Einzelpositionen nach Person gruppiert, Personen alphabetisch */
+const itemsByPerson = computed(() => {
+  const groups = new Map<number, { playerId: number; playerName: string; items: EveningItem[] }>();
+  for (const item of singleItems.value) {
+    const group = groups.get(item.playerId!) ?? { playerId: item.playerId!, playerName: item.playerName!, items: [] };
+    group.items.push(item);
+    groups.set(item.playerId!, group);
+  }
+  return [...groups.values()].sort((a, b) => a.playerName.localeCompare(b.playerName));
 });
+
+type Row = { kind: 'heading'; key: string; label: string } | { kind: 'item'; key: string; item: EveningItem };
+
+/** Erst die geteilten Positionen, dann pro Person deren Einzelpositionen, jeweils mit Überschrift */
+const rows = computed<Row[]>(() => [
+  ...(sharedItems.value.length ? [{ kind: 'heading' as const, key: 'h-shared', label: 'Geteilt' }] : []),
+  ...sharedItems.value.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
+  ...itemsByPerson.value.flatMap((g) => [
+    { kind: 'heading' as const, key: `h${g.playerId}`, label: g.playerName },
+    ...g.items.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
+  ]),
+]);
+
+/** Was in einer geteilten Position steckt, nach Artikel zusammengefasst: "Leihschuhe ×3 (12,00 €)" */
+function containedSummary(sharedId: number): string {
+  const byName = new Map<string, { quantity: number; cents: number }>();
+  for (const item of singleItems.value.filter((i) => i.containedInId === sharedId)) {
+    const sum = byName.get(item.itemName) ?? { quantity: 0, cents: 0 };
+    sum.quantity += item.quantity;
+    sum.cents += item.totalCents;
+    byName.set(item.itemName, sum);
+  }
+  return [...byName].map(([name, sum]) => `${name} ×${sum.quantity} (${formatEuro(sum.cents)})`).join(', ');
+}
 
 const recipientCandidates = computed(() => attendees.value.filter((a) => a.hasAccount));
 
@@ -83,7 +115,10 @@ const formError = computed(() => {
 });
 
 async function loadMenu() {
-  menu.value = evening.value?.location ? await api.menu(evening.value.location.id) : [];
+  const location = evening.value?.location;
+  [menu.value, sharedNames.value] = location
+    ? await Promise.all([api.menu(location.id), api.sharedNames(location.id)])
+    : [[], []];
 }
 
 function applyEvening(e: Evening) {
@@ -151,6 +186,8 @@ function setMode(next: 'single' | 'shared') {
 }
 
 function onItemInput() {
+  // Geteilte Positionen kosten jedes Mal anders, dafür gibt es keinen Preisvorschlag
+  if (mode.value === 'shared') return;
   const known = menu.value.find((m) => m.name.toLowerCase() === itemName.value.trim().toLowerCase());
   if (known && !priceTouched.value) priceText.value = centsToInput(known.priceCents);
 }
@@ -176,7 +213,7 @@ async function addConsumption() {
       quantity: quantity.value,
       unitCents: parseEuro(priceText.value)!,
     });
-    // Neue Artikel und Preise stehen jetzt auf der Karte, neue Personen in der Gruppe
+    // Neue Artikel und Preise stehen jetzt auf der Karte (bzw. bei den geteilten Namen), neue Personen in der Gruppe
     await loadMenu();
     if (isNew) {
       players.value = await api.listPlayers(result.groupId);
@@ -244,10 +281,6 @@ function removeItem(item: EveningItem) {
   }
 }
 
-function changeContainedIn(item: EveningItem, value: string) {
-  void run(() => api.updateConsumption(item.id, { containedInId: value ? Number(value) : null }));
-}
-
 function startEditShares(item: EveningItem) {
   editingSharesOf.value = item.id;
   editShareIds.value = item.shares.map((s) => s.playerId);
@@ -257,6 +290,19 @@ function saveShares(item: EveningItem) {
   void run(async () => {
     const result = await api.updateConsumption(item.id, { sharedWith: editShareIds.value });
     editingSharesOf.value = null;
+    return result;
+  });
+}
+
+function startEditContained(item: EveningItem) {
+  editingContainedOf.value = item.id;
+  editContainedIds.value = singleItems.value.filter((i) => i.containedInId === item.id).map((i) => i.id);
+}
+
+function saveContained(item: EveningItem) {
+  void run(async () => {
+    const result = await api.setContained(item.id, editContainedIds.value);
+    editingContainedOf.value = null;
     return result;
   });
 }
@@ -287,7 +333,13 @@ function saveLocation(locationId: number | null) {
 }
 
 async function deleteEvening() {
-  if (!evening.value || !confirm('Diesen Abend löschen?')) return;
+  const e = evening.value;
+  if (!e) return;
+  const question = e.items.length
+    ? `Abend mit ${e.items.length} ${e.items.length === 1 ? 'Position' : 'Positionen'} und ${e.attendees.length} ` +
+      `${e.attendees.length === 1 ? 'Teilnehmer' : 'Teilnehmern'} löschen? Das lässt sich nicht rückgängig machen.`
+    : 'Diesen Abend löschen?';
+  if (!confirm(question)) return;
   await run(async () => {
     await api.deleteEvening(props.id);
     await router.push({ name: 'evenings' });
@@ -522,7 +574,12 @@ void load();
               @input="onItemInput"
             />
             <datalist id="menu-items">
-              <option v-for="m in menu" :key="m.id" :value="m.name">{{ formatEuro(m.priceCents) }}</option>
+              <template v-if="mode === 'shared'">
+                <option v-for="n in sharedNames" :key="n" :value="n"></option>
+              </template>
+              <template v-else>
+                <option v-for="m in menu" :key="m.id" :value="m.name">{{ formatEuro(m.priceCents) }}</option>
+              </template>
             </datalist>
           </label>
           <label class="qty">
@@ -550,110 +607,136 @@ void load();
           </label>
         </fieldset>
         <small class="muted">
-          <template v-if="mode === 'shared'">Zum Beispiel die Bahnen: der Betrag wird gleichmäßig verteilt.</template>
+          <template v-if="mode === 'shared'">
+            Zum Beispiel die Bahnen: der Betrag wird gleichmäßig verteilt. Geteilte Positionen kommen nicht auf die Karte.
+          </template>
           <template v-else-if="sharedItems.length">
             „Steckt in“: z. B. Leihschuhe, die auf der Rechnung im Bowling-Betrag enthalten sind. Die Person zahlt sie
             allein, und sie werden vor dem Verteilen vom Bowling abgezogen.
           </template>
-          Neue Artikel landen automatisch auf der Karte von {{ evening.location?.name }}.
+          <template v-if="mode === 'single'">Neue Artikel landen automatisch auf der Karte von {{ evening.location?.name }}.</template>
         </small>
       </template>
     </article>
 
     <article>
       <header>Positionen</header>
-      <p v-if="sortedItems.length === 0" class="muted">Noch nichts eingetragen.</p>
+      <p v-if="rows.length === 0" class="muted">Noch nichts eingetragen.</p>
       <div v-else class="overflow-auto">
-        <table>
+        <table class="positions">
           <thead>
             <tr>
-              <th>Wer</th>
               <th>Artikel</th>
               <th class="num">Menge</th>
-              <th class="num">Einzelpreis</th>
+              <th class="num unit-col">Einzelpreis</th>
               <th class="num">Summe</th>
               <th v-if="editable"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="item in sortedItems" :key="item.id" :class="{ contained: item.containedInId !== null }">
-              <td>
-                <template v-if="item.shared">
-                  <template v-if="editingSharesOf === item.id">
-                    <div class="share-edit">
-                      <label v-for="a in attendees" :key="a.playerId">
-                        <input v-model="editShareIds" type="checkbox" :value="a.playerId" :disabled="busy" />
-                        {{ a.playerName }}
-                      </label>
+            <template v-for="row in rows" :key="row.key">
+              <tr v-if="row.kind === 'heading'" class="group-row">
+                <th :colspan="editable ? 5 : 4" scope="rowgroup">{{ row.label }}</th>
+              </tr>
+              <tr v-else>
+                <td>
+                  {{ row.item.itemName }}
+                  <template v-if="row.item.shared">
+                    <!-- Wer zahlt mit -->
+                    <div v-if="editingSharesOf === row.item.id" class="inline-edit">
+                      <div class="share-edit">
+                        <label v-for="a in attendees" :key="a.playerId">
+                          <input v-model="editShareIds" type="checkbox" :value="a.playerId" :disabled="busy" />
+                          {{ a.playerName }}
+                        </label>
+                      </div>
+                      <div class="actions">
+                        <button type="button" class="small" :disabled="busy || editShareIds.length === 0" @click="saveShares(row.item)">
+                          Speichern
+                        </button>
+                        <button type="button" class="small secondary outline" @click="editingSharesOf = null">Abbrechen</button>
+                      </div>
                     </div>
-                    <div class="actions">
-                      <button type="button" class="small" :disabled="busy || editShareIds.length === 0" @click="saveShares(item)">
-                        Speichern
-                      </button>
-                      <button type="button" class="small secondary outline" @click="editingSharesOf = null">Abbrechen</button>
+                    <small v-else class="muted detail">
+                      geteilt · {{ row.item.shares.map((s) => s.playerName).join(', ') }}
+                      <a v-if="editable" href="#" class="small-link" @click.prevent="startEditShares(row.item)">ändern</a>
+                    </small>
+                    <!-- Was steckt darin -->
+                    <div v-if="editingContainedOf === row.item.id" class="inline-edit">
+                      <div class="share-edit">
+                        <label v-for="i in singleItems" :key="i.id">
+                          <input v-model="editContainedIds" type="checkbox" :value="i.id" :disabled="busy" />
+                          {{ i.itemName }} ×{{ i.quantity }} ({{ i.playerName }})
+                        </label>
+                      </div>
+                      <div class="actions">
+                        <button type="button" class="small" :disabled="busy" @click="saveContained(row.item)">Speichern</button>
+                        <button type="button" class="small secondary outline" @click="editingContainedOf = null">Abbrechen</button>
+                      </div>
                     </div>
+                    <small v-else-if="containedSummary(row.item.id) || (editable && singleItems.length)" class="muted detail">
+                      <template v-if="containedSummary(row.item.id)">
+                        enthält {{ containedSummary(row.item.id) }}
+                        <template v-if="row.item.netCents !== null"> · verteilt: {{ formatEuro(row.item.netCents) }}</template>
+                      </template>
+                      <a v-if="editable && singleItems.length" href="#" class="small-link" @click.prevent="startEditContained(row.item)">
+                        {{ containedSummary(row.item.id) ? 'ändern' : '+ enthält …' }}
+                      </a>
+                    </small>
                   </template>
-                  <template v-else>
-                    <strong>geteilt</strong>
-                    <small class="muted"> · {{ item.shares.map((s) => s.playerName).join(', ') }}</small>
-                    <a v-if="editable" href="#" class="small-link" @click.prevent="startEditShares(item)">ändern</a>
-                  </template>
-                </template>
-                <template v-else>
-                  {{ item.playerName }}
-                  <template v-if="editable && sharedItems.length">
-                    <select
-                      class="contained-select"
-                      :value="item.containedInId === null ? '' : String(item.containedInId)"
+                  <small v-else-if="row.item.containedInId !== null" class="muted detail">
+                    in {{ containerName(row.item.containedInId) }}
+                  </small>
+                  <!-- Am Handy ersetzt das die Spalte Einzelpreis -->
+                  <small class="muted detail unit-inline">
+                    je
+                    <a v-if="editable" href="#" @click.prevent="changePrice(row.item)">{{ formatEuro(row.item.unitCents) }}</a>
+                    <template v-else>{{ formatEuro(row.item.unitCents) }}</template>
+                  </small>
+                </td>
+                <td class="num">
+                  <div class="qty-cell">
+                    <button
+                      v-if="editable"
+                      type="button"
+                      class="small secondary outline"
                       :disabled="busy"
-                      :aria-label="`${item.itemName} steckt in`"
-                      @change="changeContainedIn(item, ($event.target as HTMLSelectElement).value)"
+                      :aria-label="`${row.item.itemName} eins weniger`"
+                      @click="changeQuantity(row.item, -1)"
                     >
-                      <option value="">eigene Position</option>
-                      <option v-for="s in sharedItems" :key="s.id" :value="String(s.id)">steckt in {{ s.itemName }}</option>
-                    </select>
-                  </template>
-                  <small v-else-if="item.containedInId !== null" class="muted"> · steckt in {{ containerName(item.containedInId) }}</small>
-                </template>
-              </td>
-              <td>{{ item.itemName }}</td>
-              <td class="num qty-cell">
-                <button
-                  v-if="editable"
-                  type="button"
-                  class="small secondary outline"
-                  :disabled="busy"
-                  :aria-label="`${item.itemName} eins weniger`"
-                  @click="changeQuantity(item, -1)"
-                >
-                  −
-                </button>
-                <span>{{ item.quantity }}</span>
-                <button
-                  v-if="editable"
-                  type="button"
-                  class="small secondary outline"
-                  :disabled="busy || item.quantity >= 99"
-                  :aria-label="`${item.itemName} eins mehr`"
-                  @click="changeQuantity(item, 1)"
-                >
-                  +
-                </button>
-              </td>
-              <td class="num">
-                <a v-if="editable" href="#" title="Preis ändern" @click.prevent="changePrice(item)">{{ formatEuro(item.unitCents) }}</a>
-                <template v-else>{{ formatEuro(item.unitCents) }}</template>
-              </td>
-              <td class="num">
-                {{ formatEuro(item.totalCents) }}
-                <small v-if="item.shared && item.netCents !== null && item.netCents !== item.totalCents" class="muted net">
-                  verteilt: {{ formatEuro(item.netCents) }}
-                </small>
-              </td>
-              <td v-if="editable">
-                <button type="button" class="small secondary outline" :disabled="busy" @click="removeItem(item)">Entfernen</button>
-              </td>
-            </tr>
+                      −
+                    </button>
+                    <span>{{ row.item.quantity }}</span>
+                    <button
+                      v-if="editable"
+                      type="button"
+                      class="small secondary outline"
+                      :disabled="busy || row.item.quantity >= 99"
+                      :aria-label="`${row.item.itemName} eins mehr`"
+                      @click="changeQuantity(row.item, 1)"
+                    >
+                      +
+                    </button>
+                  </div>
+                </td>
+                <td class="num unit-col">
+                  <a v-if="editable" href="#" title="Preis ändern" @click.prevent="changePrice(row.item)">{{ formatEuro(row.item.unitCents) }}</a>
+                  <template v-else>{{ formatEuro(row.item.unitCents) }}</template>
+                </td>
+                <td class="num">{{ formatEuro(row.item.totalCents) }}</td>
+                <td v-if="editable">
+                  <button
+                    type="button"
+                    class="small secondary outline"
+                    :disabled="busy"
+                    :aria-label="`${row.item.itemName} entfernen`"
+                    @click="removeItem(row.item)"
+                  >
+                    <span class="remove-text">Entfernen</span><span class="remove-icon" aria-hidden="true">✕</span>
+                  </button>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -774,9 +857,6 @@ h2 .status {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.net {
-  display: block;
-}
 .qty-cell {
   display: flex;
   gap: 0.4rem;
@@ -787,16 +867,49 @@ h2 .status {
   min-width: 1.5em;
   text-align: center;
 }
-tr.contained td:first-child {
-  padding-left: 1.5rem;
-}
-.contained-select {
-  display: block;
-  width: auto;
-  margin: 0.25rem 0 0;
-  padding: 0.15rem 2rem 0.15rem 0.5rem;
+.positions .group-row th {
+  padding-top: 0.4rem;
+  padding-bottom: 0.4rem;
   font-size: 0.8em;
-  height: auto;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--pico-muted-color);
+  background: var(--pico-code-background-color);
+}
+.detail {
+  display: block;
+}
+.detail.unit-inline,
+.remove-icon {
+  display: none;
+}
+.inline-edit {
+  margin-top: 0.4rem;
+}
+/* Am Handy: Einzelpreis unter den Namen, Entfernen als ✕, damit nichts seitlich rausläuft */
+@media (max-width: 600px) {
+  .positions .unit-col,
+  .remove-text {
+    display: none;
+  }
+  .remove-icon {
+    display: inline;
+  }
+  .detail.unit-inline {
+    display: block;
+  }
+  .positions th,
+  .positions td {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+  }
+  .positions .qty-cell {
+    gap: 0.25rem;
+  }
+  .positions button.small {
+    padding: 0.2rem 0.45rem;
+  }
 }
 .small-link {
   margin-left: 0.4rem;

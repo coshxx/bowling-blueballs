@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Put } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators';
 import type { SessionUser } from '../auth/session';
 import {
@@ -7,6 +7,7 @@ import {
   BillDto,
   CreateEveningDto,
   MarkPaidDto,
+  SetContainedDto,
   UpdateConsumptionDto,
   UpdateEveningDto,
 } from './evenings.dto';
@@ -87,6 +88,11 @@ export class EveningsController {
   @Patch('consumptions/:id')
   updateConsumption(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateConsumptionDto) {
     return this.evenings.updateConsumption(user, id, dto);
+  }
+
+  @Put('consumptions/:id/contained')
+  setContained(@CurrentUser() user: SessionUser, @Param('id', ParseIntPipe) id: number, @Body() dto: SetContainedDto) {
+    return this.evenings.setContained(user, id, dto.itemIds);
   }
 
   @Delete('consumptions/:id')

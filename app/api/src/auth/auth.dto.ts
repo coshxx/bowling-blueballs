@@ -29,6 +29,17 @@ export class LoginDto {
   password: string;
 }
 
+export class ChangePasswordDto {
+  @IsString()
+  @MaxLength(200)
+  currentPassword: string;
+
+  @IsString()
+  @MinLength(4, { message: 'Das Passwort muss mindestens 4 Zeichen lang sein.' })
+  @MaxLength(200)
+  newPassword: string;
+}
+
 export class UpdateProfileDto {
   /** PayPal.Me-Name ohne "paypal.me/"; null oder leer entfernt ihn */
   @IsOptional()

@@ -28,6 +28,11 @@ export class LocationsController {
     return this.locations.menu(id, user.isAdmin && hidden === true);
   }
 
+  @Get('locations/:id/shared-names')
+  sharedNames(@Param('id', ParseIntPipe) id: number) {
+    return this.locations.sharedNames(id);
+  }
+
   @AdminOnly()
   @Patch('menu-items/:id')
   @HttpCode(204)

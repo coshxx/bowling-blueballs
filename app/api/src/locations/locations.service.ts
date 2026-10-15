@@ -40,6 +40,18 @@ export class LocationsService {
     }));
   }
 
+  /** Namen geteilter Positionen, die an dieser Location schon vorkamen (Vorschläge ohne Preis). */
+  async sharedNames(locationId: number) {
+    await this.getLocation(locationId);
+    const rows = await this.prisma.consumption.findMany({
+      where: { name: { not: null }, evening: { locationId } },
+      select: { name: true },
+      distinct: ['name'],
+      orderBy: { name: 'asc' },
+    });
+    return rows.map((r) => r.name!);
+  }
+
   async updateItem(id: number, data: { name?: string; priceCents?: number; hidden?: boolean }) {
     await this.getItem(id);
     try {

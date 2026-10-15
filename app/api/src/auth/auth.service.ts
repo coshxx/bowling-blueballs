@@ -67,6 +67,19 @@ export class AuthService {
     };
   }
 
+  /** Prüft das aktuelle Passwort, setzt das neue und macht alle bestehenden Sessions ungültig. */
+  async changePassword(user: SessionUser, currentPassword: string, newPassword: string): Promise<User> {
+    const { passwordHash } = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { passwordHash: true } });
+    if (!(await verifyPassword(currentPassword, passwordHash))) {
+      // 403 statt 401: Das Frontend würde bei 401 zum Login umleiten
+      throw new ForbiddenException('Das aktuelle Passwort stimmt nicht.');
+    }
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: await hashPassword(newPassword), sessionVersion: { increment: 1 } },
+    });
+  }
+
   async updateProfile(user: SessionUser, data: { paypalMe?: string | null }): Promise<MeResponse> {
     await this.prisma.user.update({ where: { id: user.id }, data: { paypalMe: data.paypalMe || null } });
     return this.me(user);

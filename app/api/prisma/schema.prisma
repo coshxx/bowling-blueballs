@@ -215,7 +215,10 @@ model Consumption {
   eveningId     Int
   /// null = geteilte Position, verteilt auf die Spieler in shares
   playerId      Int?
-  menuItemId    Int
+  /// Nur Einzelpositionen hängen an der Karte; geteilte (z. B. Bahnen) haben stattdessen name
+  menuItemId    Int?
+  /// Name einer geteilten Position, die bewusst nicht auf der Karte steht (Preis jedes Mal anders)
+  name          String?
   quantity      Int
   /// Einzelpreis in Cent zum Zeitpunkt des Eintragens (Kopie, unabhängig von späteren Kartenpreisen)
   unitCents     Int
@@ -225,7 +228,7 @@ model Consumption {
   createdAt     DateTime           @default(now())
   evening       Evening            @relation(fields: [eveningId], references: [id], onDelete: Cascade)
   player        Player?            @relation(fields: [playerId], references: [id], onDelete: Restrict)
-  menuItem      MenuItem           @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
+  menuItem      MenuItem?          @relation(fields: [menuItemId], references: [id], onDelete: Restrict)
   containedIn   Consumption?       @relation("contained", fields: [containedInId], references: [id], onDelete: SetNull)
   contained     Consumption[]      @relation("contained")
   shares        ConsumptionShare[]

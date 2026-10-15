@@ -85,7 +85,7 @@ export class AddConsumptionDto {
   @IsInt()
   containedInId?: number;
 
-  /** Name des Artikels; steht er noch nicht auf der Karte, wird er angelegt */
+  /** Name des Artikels; bei Einzelpositionen wird er auf der Karte angelegt, falls er noch fehlt */
   @IsString()
   @Length(1, 60, { message: 'Der Artikelname muss 1 bis 60 Zeichen lang sein.' })
   itemName: string;
@@ -126,6 +126,14 @@ export class UpdateConsumptionDto {
   @ValidateIf((_, v) => v !== null)
   @IsInt()
   containedInId?: number | null;
+}
+
+export class SetContainedDto {
+  /** Einzelpositionen, die in der geteilten Position stecken; alle anderen werden gelöst */
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsInt({ each: true })
+  itemIds: number[];
 }
 
 export class BillDto {

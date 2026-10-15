@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, HttpException, Logger, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
+import { ChangePasswordDto, LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
 import { config } from '../config';
 import { AuthService } from './auth.service';
 import { CurrentUser, Public } from './decorators';
@@ -82,6 +82,28 @@ export class AuthController {
   me(@CurrentUser() user: SessionUser, @Req() req: Request) {
     this.logger.log(`App geöffnet: ${user.username} von ${client(req)}`);
     return this.auth.me(user);
+  }
+
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Patch('password')
+  @HttpCode(204)
+  async changePassword(
+    @CurrentUser() user: SessionUser,
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    let updated;
+    try {
+      updated = await this.auth.changePassword(user, dto.currentPassword, dto.newPassword);
+    } catch (e) {
+      this.logger.warn(`Passwortänderung fehlgeschlagen für ${user.username} von ${client(req)}: ${reason(e)}`);
+      throw e;
+    }
+    this.logger.log(`Passwort geändert: ${user.username} von ${client(req)}`);
+    // Andere Geräte sind über die neue sessionVersion abgemeldet, dieses bleibt eingeloggt
+    writeSession(res, updated.id, updated.sessionVersion);
   }
 
   @Patch('profile')
