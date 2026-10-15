@@ -1,20 +1,33 @@
-import { Body, Controller, Get, HttpCode, Patch, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpException, Logger, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
 import { config } from '../config';
 import { AuthService } from './auth.service';
 import { CurrentUser, Public } from './decorators';
-import { clearSession, SessionUser, writeSession } from './session';
+import { clearSession, readSession, SessionUser, writeSession } from './session';
+
+// req.ip ist dank „trust proxy“ die echte Client-IP aus dem X-Forwarded-For von Tailscale
+function client(req: Request): string {
+  return `${req.ip} (${req.get('user-agent') ?? 'unbekannt'})`;
+}
+
+function reason(e: unknown): string {
+  return e instanceof HttpException ? e.message : String(e);
+}
 
 @Controller('auth')
 export class AuthController {
+  private readonly logger = new Logger('Zugriff');
+
   constructor(private readonly auth: AuthService) {}
 
-  /** Öffentlich: Das Login-Formular fragt, ob es ein Feld für den Einladungscode braucht */
+  /** Öffentlich: Das Login-Formular fragt beim Öffnen, ob es ein Feld für den Einladungscode braucht.
+   *  Damit landet jeder Aufruf der Login-Seite im Log. */
   @Public()
   @Get('options')
-  options() {
+  options(@Req() req: Request) {
+    this.logger.log(`Login-Seite aufgerufen von ${client(req)}`);
     return { inviteCodeRequired: config.registerCode !== null };
   }
 
@@ -22,8 +35,15 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
-  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
-    const user = await this.auth.register(dto.username, dto.password, dto.inviteCode);
+  async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    let user;
+    try {
+      user = await this.auth.register(dto.username, dto.password, dto.inviteCode);
+    } catch (e) {
+      this.logger.warn(`Registrierung fehlgeschlagen für ${JSON.stringify(dto.username)} von ${client(req)}: ${reason(e)}`);
+      throw e;
+    }
+    this.logger.log(`Registrierung ${user.username} von ${client(req)}`);
     writeSession(res, user.id, user.sessionVersion);
     return this.auth.me({ id: user.id, username: user.username, isAdmin: user.isAdmin });
   }
@@ -33,8 +53,15 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(200)
-  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
-    const user = await this.auth.login(dto.username, dto.password);
+  async login(@Body() dto: LoginDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    let user;
+    try {
+      user = await this.auth.login(dto.username, dto.password);
+    } catch (e) {
+      this.logger.warn(`Login fehlgeschlagen für ${JSON.stringify(dto.username)} von ${client(req)}`);
+      throw e;
+    }
+    this.logger.log(`Login ${user.username} von ${client(req)}`);
     writeSession(res, user.id, user.sessionVersion);
     return this.auth.me({ id: user.id, username: user.username, isAdmin: user.isAdmin });
   }
@@ -42,12 +69,18 @@ export class AuthController {
   @Public()
   @Post('logout')
   @HttpCode(204)
-  logout(@Res({ passthrough: true }) res: Response) {
+  logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const session = readSession(req);
+    if (session) {
+      this.logger.log(`Logout Benutzer #${session.uid} von ${client(req)}`);
+    }
     clearSession(res);
   }
 
+  // Wird vom Frontend beim App-Start aufgerufen (und nach Admin-Änderungen erneut)
   @Get('me')
-  me(@CurrentUser() user: SessionUser) {
+  me(@CurrentUser() user: SessionUser, @Req() req: Request) {
+    this.logger.log(`App geöffnet: ${user.username} von ${client(req)}`);
     return this.auth.me(user);
   }
 
