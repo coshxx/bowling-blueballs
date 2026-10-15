@@ -18,7 +18,9 @@ export const config = {
   webDist: process.env.WEB_DIST,
   maxUploadBytes: 20 * 1024 * 1024,
   sessionSecret: required('SESSION_SECRET'),
-  // Die App läuft im LAN über HTTP, ein Secure-Cookie käme dort nie an
+  /** Wenn gesetzt, braucht die Registrierung diesen Einladungscode (Prod); leer = offene Registrierung (Dev) */
+  registerCode: process.env.REGISTER_CODE || null,
+  // Dev läuft im LAN über HTTP, ein Secure-Cookie käme dort nie an; Prod (Tailscale Funnel) setzt true
   cookieSecure: process.env.COOKIE_SECURE === 'true',
   /** Benutzernamen (kleingeschrieben), die bei Registrierung/Login automatisch Admin werden */
   adminUsers: (process.env.ADMIN_USERS ?? '')

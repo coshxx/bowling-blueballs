@@ -1,0 +1,15 @@
+# Prod-Anpassungen an compose.base.yaml, wird in compose.prod.yaml darübergelegt
+# (Compose erlaubt nicht, eingebundene Services/Volumes direkt zu überschreiben)
+
+services:
+  ollama:
+    restart: unless-stopped
+
+  parser:
+    restart: unless-stopped
+
+volumes:
+  # Modelle mit der Dev-Umgebung teilen, statt ~6 GB erneut zu laden
+  ollama-models:
+    name: bowling2_ollama-models
+    external: true

@@ -1,4 +1,5 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { User } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { config } from '../config';
@@ -15,7 +16,10 @@ export interface MeResponse {
 export class AuthService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async register(username: string, password: string): Promise<User> {
+  async register(username: string, password: string, inviteCode?: string): Promise<User> {
+    if (config.registerCode !== null && !sameSecret(inviteCode?.trim() ?? '', config.registerCode)) {
+      throw new ForbiddenException('Der Einladungscode stimmt nicht.');
+    }
     const usernameKey = username.toLowerCase();
     if (await this.prisma.user.findUnique({ where: { usernameKey } })) {
       throw new ConflictException('Der Benutzername ist schon vergeben.');
@@ -67,4 +71,10 @@ export class AuthService {
     await this.prisma.user.update({ where: { id: user.id }, data: { paypalMe: data.paypalMe || null } });
     return this.me(user);
   }
+}
+
+/** Vergleich in konstanter Zeit; die Hashes gleichen unterschiedliche Längen aus */
+function sameSecret(a: string, b: string): boolean {
+  const hash = (v: string) => createHash('sha256').update(v).digest();
+  return timingSafeEqual(hash(a), hash(b));
 }

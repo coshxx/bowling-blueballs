@@ -26,6 +26,8 @@ RUN npm ci --omit=dev --workspace api --no-audit --no-fund \
 COPY --from=build /app/api/dist api/dist
 COPY --from=build /app/web/dist web/dist
 
+# Ein frisches Named Volume übernimmt Besitzer und Rechte von hier
+RUN mkdir /data && chown node:node /data
 USER node
 WORKDIR /app/api
 EXPOSE 8000

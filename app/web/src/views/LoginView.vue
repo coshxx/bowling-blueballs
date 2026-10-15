@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
 import { applySession } from '../session';
@@ -10,6 +10,8 @@ const router = useRouter();
 const mode = ref<'login' | 'register'>('login');
 const username = ref('');
 const password = ref('');
+const inviteCode = ref('');
+const inviteCodeRequired = ref(false);
 const busy = ref(false);
 const error = ref<string | null>(null);
 
@@ -20,7 +22,7 @@ async function submit() {
     const me =
       mode.value === 'login'
         ? await api.login(username.value, password.value)
-        : await api.register(username.value, password.value);
+        : await api.register(username.value, password.value, inviteCodeRequired.value ? inviteCode.value : undefined);
     applySession(me);
     const next = typeof route.query.next === 'string' && route.query.next.startsWith('/') ? route.query.next : '/';
     await router.replace(next);
@@ -30,6 +32,14 @@ async function submit() {
     busy.value = false;
   }
 }
+
+onMounted(async () => {
+  try {
+    inviteCodeRequired.value = (await api.authOptions()).inviteCodeRequired;
+  } catch {
+    // ohne Antwort kein Feld; der Server meldet dann beim Registrieren, was fehlt
+  }
+});
 
 function switchMode() {
   mode.value = mode.value === 'login' ? 'register' : 'login';
@@ -56,6 +66,11 @@ function switchMode() {
           minlength="4"
         />
         <small v-if="mode === 'register'">Mindestens 4 Zeichen. Eine E-Mail-Adresse brauchst du nicht.</small>
+      </label>
+      <label v-if="mode === 'register' && inviteCodeRequired">
+        Einladungscode
+        <input v-model.trim="inviteCode" autocomplete="off" required maxlength="100" />
+        <small>Bekommst du von jemandem aus der Gruppe.</small>
       </label>
       <p v-if="error" class="msg-error">{{ error }}</p>
       <button type="submit" :aria-busy="busy" :disabled="busy">

@@ -52,7 +52,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   me: () => request<MeResponse>('GET', '/auth/me'),
   login: (username: string, password: string) => request<MeResponse>('POST', '/auth/login', { username, password }),
-  register: (username: string, password: string) => request<MeResponse>('POST', '/auth/register', { username, password }),
+  authOptions: () => request<{ inviteCodeRequired: boolean }>('GET', '/auth/options'),
+  register: (username: string, password: string, inviteCode?: string) =>
+    request<MeResponse>('POST', '/auth/register', { username, password, inviteCode }),
   logout: () => request<void>('POST', '/auth/logout'),
   updateProfile: (data: { paypalMe: string | null }) => request<MeResponse>('PATCH', '/auth/profile', data),
 

@@ -1,26 +1,57 @@
-# Prod-artig (Nest liefert den Vue-Build aus):  docker compose -f compose.prod.yaml up -d --build
-# Vorher die Dev-Umgebung stoppen, beide nutzen Port 8000 und ./data.
-# Benötigt eine .env mit SESSION_SECRET=<lange Zufallszeichenkette> (z. B. openssl rand -hex 32)
-# und optional ADMIN_USERS=name1,name2 (Standard: cosh).
+# Prod: docker compose -f compose.prod.yaml up -d --build
+# Öffentlich erreichbar über Tailscale Funnel (https://bowling.<tailnet>.ts.net), am Host wird kein Port gebunden.
+# Läuft als eigenes Projekt "bowling" mit eigenen Daten (Volume bowling_data), parallel zur Dev-Umgebung möglich.
+# Benötigt eine .env, siehe .env.example.
+
+name: bowling
 
 include:
-  - compose.base.yaml
+  - path:
+      - compose.base.yaml
+      - compose.prod.base.yaml
 
 services:
+  tailscale:
+    image: tailscale/tailscale:stable
+    hostname: bowling
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:?TS_AUTHKEY fehlt in .env}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_USERSPACE: "true"
+      # Auth-Key nur für die Erstanmeldung, danach reicht der State im Volume
+      TS_AUTH_ONCE: "true"
+    volumes:
+      - tailscale:/var/lib/tailscale
+      - ./tailscale/serve.json:/config/serve.json:ro
+    restart: unless-stopped
+
   app:
     build: ./app
+    # Mini-Init als PID 1, damit SIGTERM ankommt (sonst wartet Docker 10 s auf SIGKILL)
+    init: true
+    # Teilt sich den Netzwerk-Namespace mit Tailscale, lauscht nur auf 127.0.0.1:8000
+    network_mode: service:tailscale
     depends_on:
+      tailscale:
+        condition: service_started
       parser:
         condition: service_healthy
-    user: "${UID:-1000}:${GID:-1000}"
-    ports:
-      - "0.0.0.0:8000:8000"
     environment:
+      HOST: 127.0.0.1
+      PORT: "8000"
       DATABASE_URL: file:/data/bowling.db
       DATA_DIR: /data
       PARSER_URL: http://parser:8080
       WEB_DIST: /app/web/dist
+      COOKIE_SECURE: "true"
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET fehlt in .env}
+      REGISTER_CODE: ${REGISTER_CODE:?REGISTER_CODE fehlt in .env}
       ADMIN_USERS: ${ADMIN_USERS:-cosh}
     volumes:
-      - ./data:/data
+      - data:/data
+    restart: unless-stopped
+
+volumes:
+  tailscale:
+  data:
