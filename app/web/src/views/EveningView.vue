@@ -75,16 +75,48 @@ const itemsByPerson = computed(() => {
   return [...groups.values()].sort((a, b) => a.playerName.localeCompare(b.playerName));
 });
 
-type Row = { kind: 'heading'; key: string; label: string } | { kind: 'item'; key: string; item: EveningItem };
+type Row =
+  | { kind: 'heading'; key: string; label: string }
+  | { kind: 'item'; key: string; item: EveningItem }
+  | { kind: 'share'; key: string; name: string; cents: number; hint: string }
+  | { kind: 'sum'; key: string; label: string; cents: number };
 
-/** Erst die geteilten Positionen, dann pro Person deren Einzelpositionen, jeweils mit Überschrift */
+/** Anteile einer Person an geteilten Positionen, gleichnamige (z. B. zwei Mal "Bowling") zusammengefasst */
+function sharesOf(playerId: number) {
+  const byName = new Map<string, { cents: number; items: EveningItem[] }>();
+  for (const item of sharedItems.value) {
+    const cents = item.shares.find((s) => s.playerId === playerId)?.cents;
+    if (cents == null) continue;
+    const sum = byName.get(item.itemName) ?? { cents: 0, items: [] };
+    sum.cents += cents;
+    sum.items.push(item);
+    byName.set(item.itemName, sum);
+  }
+  return [...byName].map(([name, { cents, items }]) => ({
+    name,
+    cents,
+    hint:
+      items.length === 1
+        ? `${formatEuro(items[0].netCents ?? items[0].totalCents)} ÷ ${items[0].shares.length}`
+        : `aus ${items.length} geteilten Posten`,
+  }));
+}
+
+/** Erst die geteilten Positionen, dann pro Person deren Anteile, Einzelpositionen und Summe */
 const rows = computed<Row[]>(() => [
   ...(sharedItems.value.length ? [{ kind: 'heading' as const, key: 'h-shared', label: 'Geteilt' }] : []),
   ...sharedItems.value.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
-  ...itemsByPerson.value.flatMap((g) => [
-    { kind: 'heading' as const, key: `h${g.playerId}`, label: g.playerName },
-    ...g.items.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
-  ]),
+  ...attendees.value.flatMap((a) => {
+    const shares = sharesOf(a.playerId);
+    const items = itemsByPerson.value.find((g) => g.playerId === a.playerId)?.items ?? [];
+    if (shares.length === 0 && items.length === 0) return [];
+    return [
+      { kind: 'heading' as const, key: `h${a.playerId}`, label: a.playerName },
+      ...shares.map((s) => ({ kind: 'share' as const, key: `s${a.playerId}-${s.name}`, ...s })),
+      ...items.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
+      { kind: 'sum' as const, key: `t${a.playerId}`, label: `Summe ${a.playerName}`, cents: a.amountCents },
+    ];
+  }),
 ]);
 
 /** Was in einer geteilten Position steckt, nach Artikel zusammengefasst: "Leihschuhe ×3 (12,00 €)" */
@@ -638,6 +670,23 @@ void load();
               <tr v-if="row.kind === 'heading'" class="group-row">
                 <th :colspan="editable ? 5 : 4" scope="rowgroup">{{ row.label }}</th>
               </tr>
+              <tr v-else-if="row.kind === 'share'">
+                <td>
+                  {{ row.name }} <span class="muted">(Anteil)</span>
+                  <small class="muted detail">{{ row.hint }}</small>
+                </td>
+                <td></td>
+                <td class="unit-col"></td>
+                <td class="num">{{ formatEuro(row.cents) }}</td>
+                <td v-if="editable"></td>
+              </tr>
+              <tr v-else-if="row.kind === 'sum'" class="sum-row">
+                <th scope="row">{{ row.label }}</th>
+                <td></td>
+                <td class="unit-col"></td>
+                <th class="num">{{ formatEuro(row.cents) }}</th>
+                <td v-if="editable"></td>
+              </tr>
               <tr v-else>
                 <td>
                   {{ row.item.itemName }}
@@ -879,6 +928,10 @@ h2 .status {
 }
 .detail {
   display: block;
+}
+.positions .sum-row > * {
+  font-weight: 700;
+  border-top: 2px solid var(--pico-muted-border-color);
 }
 .detail.unit-inline,
 .remove-icon {

@@ -142,7 +142,8 @@ export interface EveningItem {
   shared: boolean;
   playerId: number | null;
   playerName: string | null;
-  shares: { playerId: number; playerName: string }[];
+  /** cents: Anteil an der Position, null solange sie nicht abrechenbar ist */
+  shares: { playerId: number; playerName: string; cents: number | null }[];
   /** null bei geteilten Positionen, die nicht auf der Karte stehen */
   menuItemId: number | null;
   itemName: string;

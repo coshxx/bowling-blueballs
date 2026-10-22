@@ -16,6 +16,8 @@ export interface Bill {
   amounts: Map<number, number>;
   /** Bei geteilten Positionen: Betrag nach Abzug der enthaltenen Einzelpositionen */
   netCents: Map<number, number>;
+  /** Bei geteilten Positionen: Anteil pro Spieler-ID (inklusive Rest-Cent) */
+  shareCents: Map<number, Map<number, number>>;
   /** Was die Abrechnung unmöglich macht (z. B. Abzüge größer als die geteilte Position) */
   problems: string[];
 }
@@ -28,6 +30,7 @@ export interface Bill {
 export function computeBill(items: BillItem[], preferredPlayerId: number | null, names: (id: number) => string): Bill {
   const amounts = new Map<number, number>();
   const netCents = new Map<number, number>();
+  const shareCents = new Map<number, Map<number, number>>();
   const problems: string[] = [];
   const add = (playerId: number, cents: number) => amounts.set(playerId, (amounts.get(playerId) ?? 0) + cents);
 
@@ -50,15 +53,17 @@ export function computeBill(items: BillItem[], preferredPlayerId: number | null,
     const ordered = [...item.shareIds].sort((a, b) => a - b);
     const base = Math.floor(net / ordered.length);
     let rest = net - base * ordered.length;
-    for (const playerId of ordered) add(playerId, base);
+    const shares = new Map(ordered.map((playerId) => [playerId, base]));
     if (preferredPlayerId !== null && ordered.includes(preferredPlayerId)) {
-      add(preferredPlayerId, rest);
+      shares.set(preferredPlayerId, base + rest);
     } else {
       for (const playerId of ordered) {
         if (rest-- <= 0) break;
-        add(playerId, 1);
+        shares.set(playerId, base + 1);
       }
     }
+    for (const [playerId, cents] of shares) add(playerId, cents);
+    shareCents.set(item.id, shares);
   }
-  return { amounts, netCents, problems };
+  return { amounts, netCents, shareCents, problems };
 }

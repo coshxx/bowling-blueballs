@@ -110,7 +110,12 @@ export class EveningsService {
         shared: c.playerId === null,
         playerId: c.playerId,
         playerName: c.player?.name ?? null,
-        shares: c.shares.map((s) => ({ playerId: s.playerId, playerName: s.player.name })),
+        shares: c.shares.map((s) => ({
+          playerId: s.playerId,
+          playerName: s.player.name,
+          /** Anteil an dieser Position; null, solange sie nicht abrechenbar ist */
+          cents: bill.shareCents.get(c.id)?.get(s.playerId) ?? null,
+        })),
         menuItemId: c.menuItemId,
         itemName: itemName(c),
         quantity: c.quantity,
