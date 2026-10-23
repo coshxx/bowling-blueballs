@@ -11,6 +11,7 @@ import { AuthGuard } from './auth/auth.guard';
 import { AuthService } from './auth/auth.service';
 import { AccessService } from './common/access.service';
 import { PrismaService } from './common/prisma.service';
+import { VersionController } from './common/version.controller';
 import { config } from './config';
 import { EntriesController } from './entries/entries.controller';
 import { EntriesService } from './entries/entries.service';
@@ -46,6 +47,7 @@ const staticModules = config.webDist
     StatsController,
     LocationsController,
     EveningsController,
+    VersionController,
   ],
   providers: [
     PrismaService,

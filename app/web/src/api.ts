@@ -50,6 +50,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
+  version: () => request<{ version: string | null }>('GET', '/version'),
   me: () => request<MeResponse>('GET', '/auth/me'),
   login: (username: string, password: string) => request<MeResponse>('POST', '/auth/login', { username, password }),
   authOptions: () => request<{ inviteCodeRequired: boolean }>('GET', '/auth/options'),

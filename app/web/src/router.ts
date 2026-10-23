@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { setUnauthorizedHandler } from './api';
+import { api, setUnauthorizedHandler } from './api';
 import { applySession, loadSession, session } from './session';
 
 export const router = createRouter({
@@ -29,7 +29,26 @@ export const router = createRouter({
   ],
 });
 
+/** Build-Version beim ersten Laden; weicht sie später ab, wurde neu deployt */
+let loadedVersion: string | null | undefined;
+
+/** Nach einem Deploy passt das geladene JavaScript nicht mehr zur API: beim Seitenwechsel komplett neu laden */
+async function deployedSinceLoad(): Promise<boolean> {
+  try {
+    const { version } = await api.version();
+    if (loadedVersion === undefined) loadedVersion = version;
+    return version !== null && version !== loadedVersion;
+  } catch {
+    return false;
+  }
+}
+
 router.beforeEach(async (to) => {
+  // Der allererste Aufruf merkt sich nur die Version
+  if (await deployedSinceLoad()) {
+    window.location.assign(to.fullPath);
+    return false;
+  }
   if (!session.loaded) {
     await loadSession();
   }
