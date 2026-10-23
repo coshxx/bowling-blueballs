@@ -200,7 +200,8 @@ void load();
       <small v-if="entry.uploader" class="muted">· hochgeladen von {{ entry.uploader }}</small>
     </h2>
 
-    <a :href="entry.imageUrl" target="_blank" rel="noopener" title="Bild in voller Größe öffnen">
+    <p v-if="!entry.imageUrl" class="muted">Importiert ({{ entry.source }}), ohne Foto.</p>
+    <a v-else :href="entry.imageUrl" target="_blank" rel="noopener" title="Bild in voller Größe öffnen">
       <img :src="entry.imageUrl" alt="Foto der Anzeige" class="photo" />
     </a>
 

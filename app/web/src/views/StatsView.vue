@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api } from '../api';
 import LineChart, { type Series } from '../components/LineChart.vue';
 import UserAvatar from '../components/UserAvatar.vue';
@@ -9,18 +10,36 @@ import type { GroupStats, StatsSummary } from '../types';
 
 const MAX_SERIES = 8;
 
+const route = useRoute();
+const router = useRouter();
+
 const stats = ref<GroupStats | null>(null);
 const error = ref<string | null>(null);
 
+/** ?jahr=2025 oder ?jahr=gesamt; ohne Angabe das neueste Jahr mit Spielen */
+const yearParam = computed(() => (typeof route.query.jahr === 'string' ? route.query.jahr : null));
+const year = computed<number | undefined>(() => {
+  if (yearParam.value === 'gesamt') return undefined;
+  if (yearParam.value && /^\d{4}$/.test(yearParam.value)) return Number(yearParam.value);
+  return stats.value?.years[0];
+});
+
 async function load() {
-  stats.value = null;
   if (!currentGroup.value) return;
   try {
-    stats.value = await api.stats(currentGroup.value.id);
+    const groupId = currentGroup.value.id;
+    let result = await api.stats(groupId, year.value);
+    // Ohne Angabe kennen wir das neueste Jahr erst aus der ersten Antwort
+    if (yearParam.value === null && result.years.length > 1) result = await api.stats(groupId, result.years[0]);
+    stats.value = result;
     error.value = null;
   } catch (e) {
     error.value = (e as Error).message;
   }
+}
+
+function selectYear(value: number | 'gesamt') {
+  void router.replace({ query: { ...route.query, jahr: String(value) } });
 }
 
 const leaderboard = computed(() => stats.value?.players.filter((p) => p.games >= stats.value!.leaderboardMinGames) ?? []);
@@ -48,7 +67,16 @@ const teamSeries = computed(() => (stats.value ? seriesOf(stats.value.teams) : [
 const hiddenTeams = computed(() => Math.max(0, teams.value.length - MAX_SERIES));
 const teamDates = computed(() => stats.value?.teams.timeline.map((t) => t.date) ?? []);
 
-watch(() => session.groupId, load, { immediate: true });
+watch(
+  () => session.groupId,
+  () => {
+    stats.value = null;
+    void load();
+  },
+  { immediate: true },
+);
+// Beim Jahreswechsel bleibt die alte Statistik stehen, bis die neue da ist
+watch(yearParam, load);
 </script>
 
 <template>
@@ -56,6 +84,21 @@ watch(() => session.groupId, load, { immediate: true });
 
   <template v-else>
     <h2>Statistik · {{ currentGroup.name }}</h2>
+    <div v-if="stats && stats.years.length > 1" role="group" class="years">
+      <button
+        v-for="y in stats.years"
+        :key="y"
+        type="button"
+        :class="{ outline: year !== y }"
+        :aria-pressed="year === y"
+        @click="selectYear(y)"
+      >
+        {{ y }}
+      </button>
+      <button type="button" :class="{ outline: year !== undefined }" :aria-pressed="year === undefined" @click="selectYear('gesamt')">
+        Gesamt
+      </button>
+    </div>
     <p v-if="error" class="msg-error">{{ error }}</p>
     <p v-else-if="stats && stats.players.length === 0 && teams.length === 0">
       Noch keine freigegebenen, vollständigen Spiele. Sobald Einträge geprüft und freigegeben sind, erscheint hier die Statistik.
@@ -206,6 +249,9 @@ section {
 }
 .stats td {
   white-space: nowrap;
+}
+.years {
+  max-width: 24rem;
 }
 .leaderboard li {
   margin-bottom: 0.5rem;

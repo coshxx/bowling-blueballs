@@ -57,7 +57,10 @@ export interface Entry {
   approvedAt: string | null;
   uploader: string | null;
   approvedBy: string | null;
-  imageUrl: string;
+  /** Herkunft importierter Einträge (z. B. "import-2025"), null bei Fotos */
+  source: string | null;
+  /** null bei importierten Einträgen ohne Foto */
+  imageUrl: string | null;
   result: { players: ResultPlayer[] } | null;
   scores: number[][];
   problems: string[];
@@ -103,6 +106,8 @@ export interface StatsSummary {
 }
 
 export interface GroupStats extends StatsSummary {
+  /** Jahre mit Spielen, neuestes zuerst */
+  years: number[];
   /** Teamspiele, getrennt von der Einzelstatistik */
   teams: StatsSummary;
   leaderboardMinGames: number;

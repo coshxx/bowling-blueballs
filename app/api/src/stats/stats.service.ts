@@ -25,17 +25,21 @@ export class StatsService {
     private readonly access: AccessService,
   ) {}
 
-  /** Statistik einer Gruppe aus allen freigegebenen, vollständigen Spielen; Teams werden getrennt ausgewertet. */
-  async forGroup(user: SessionUser, groupId: number) {
+  /** Statistik einer Gruppe aus allen freigegebenen, vollständigen Spielen; Teams werden getrennt ausgewertet.
+   *  Mit year nur die Spiele dieses Jahres, years nennt alle Jahre mit Spielen (neuestes zuerst). */
+  async forGroup(user: SessionUser, groupId: number, year?: number) {
     await this.access.member(user, groupId);
     const games = await this.prisma.game.findMany({
       where: { complete: true, player: { groupId }, entry: { status: 'approved' } },
       include: { player: { include: { user: true } } },
       orderBy: { playedOn: 'asc' },
     });
+    const years = [...new Set(games.map((g) => Number(g.playedOn.slice(0, 4))))].sort((a, b) => b - a);
+    const selected = year === undefined ? games : games.filter((g) => g.playedOn.startsWith(`${year}-`));
     return {
-      ...summarize(games.filter((g) => !g.player.isTeam)),
-      teams: summarize(games.filter((g) => g.player.isTeam)),
+      years,
+      ...summarize(selected.filter((g) => !g.player.isTeam)),
+      teams: summarize(selected.filter((g) => g.player.isTeam)),
       leaderboardMinGames: LEADERBOARD_MIN_GAMES,
     };
   }

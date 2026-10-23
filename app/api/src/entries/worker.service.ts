@@ -64,7 +64,8 @@ export class WorkerService implements OnApplicationBootstrap, OnApplicationShutd
           await this.sleep(IDLE_POLL_MS);
           continue;
         }
-        await this.process(next.id, next.imageFile, next.imageType);
+        // Wartend sind nur hochgeladene Fotos, importierte Einträge sind sofort freigegeben
+        await this.process(next.id, next.imageFile!, next.imageType!);
       } catch (e) {
         this.logger.error(`Worker-Fehler: ${(e as Error).message}`);
         await this.sleep(RETRY_AFTER_ERROR_MS);

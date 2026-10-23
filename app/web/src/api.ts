@@ -125,7 +125,9 @@ export const api = {
   deleteConsumption: (id: number) => request<Evening>('DELETE', `/consumptions/${id}`),
   setContained: (id: number, itemIds: number[]) => request<Evening>('PUT', `/consumptions/${id}/contained`, { itemIds }),
 
-  stats: (groupId: number) => request<GroupStats>('GET', `/groups/${groupId}/stats`),
+  /** Ohne year über alle Jahre */
+  stats: (groupId: number, year?: number) =>
+    request<GroupStats>('GET', `/groups/${groupId}/stats${year === undefined ? '' : `?year=${year}`}`),
 
   adminUsers: () => request<AdminUser[]>('GET', '/admin/users'),
   adminUpdateUser: (id: number, data: { isAdmin?: boolean; password?: string }) =>

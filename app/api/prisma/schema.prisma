@@ -91,9 +91,11 @@ model Entry {
   id           Int       @id @default(autoincrement())
   groupId      Int
   uploaderId   Int?
-  /// Dateiname in DATA_DIR/images
-  imageFile    String
-  imageType    String
+  /// Dateiname in DATA_DIR/images; null bei importierten Einträgen ohne Foto
+  imageFile    String?
+  imageType    String?
+  /// Herkunft importierter Spiele (z. B. "import-2025"); null bei hochgeladenen Fotos
+  source       String?
   /// Spieldatum YYYY-MM-DD
   playedOn     String
   /// "pending" | "running" | "review" | "approved" | "failed"

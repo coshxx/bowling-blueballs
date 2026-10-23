@@ -53,14 +53,16 @@ function remove() {
 <template>
   <article class="entry" :class="`status-${entry.status}`">
     <div class="head">
-      <a :href="entry.imageUrl" target="_blank" rel="noopener" title="Bild in voller Größe öffnen">
+      <a v-if="entry.imageUrl" :href="entry.imageUrl" target="_blank" rel="noopener" title="Bild in voller Größe öffnen">
         <img :src="entry.imageUrl" alt="Foto der Anzeige" class="thumb" loading="lazy" />
       </a>
+      <div v-else class="thumb no-photo" aria-hidden="true">🎳</div>
       <div class="meta">
         <strong>Spiel vom {{ formatDate(entry.playedOn) }}</strong>
         <span class="badge">
           {{ STATUS_LABELS[entry.status] }}<template v-if="entry.status === 'review' && entry.uncertain"> · unsicher</template>
           <template v-if="entry.isTeamGame"> · Teamspiel</template>
+          <template v-if="entry.source"> · Import</template>
         </span>
         <small>
           Hochgeladen {{ formatDateTime(entry.createdAt) }}<template v-if="entry.uploader"> von {{ entry.uploader }}</template>
@@ -123,6 +125,12 @@ function remove() {
   height: 90px;
   object-fit: cover;
   border-radius: var(--pico-border-radius);
+}
+.no-photo {
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  background: var(--pico-card-sectioning-background-color);
 }
 .badge {
   color: var(--status-color);

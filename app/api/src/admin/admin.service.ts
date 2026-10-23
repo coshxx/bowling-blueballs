@@ -137,7 +137,9 @@ export class AdminService {
     }
     const entries = await this.prisma.entry.findMany({ where: { groupId: id }, select: { imageFile: true } });
     await this.prisma.group.delete({ where: { id } });
-    await Promise.all(entries.map((e) => unlink(join(config.imagesDir, e.imageFile)).catch(() => undefined)));
+    await Promise.all(
+      entries.flatMap((e) => (e.imageFile ? [unlink(join(config.imagesDir, e.imageFile)).catch(() => undefined)] : [])),
+    );
   }
 
   private async getGroup(id: number) {

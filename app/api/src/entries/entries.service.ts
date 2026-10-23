@@ -62,8 +62,9 @@ export class EntriesService {
       approvedAt: e.approvedAt?.toISOString() ?? null,
       uploader: e.uploader?.username ?? null,
       approvedBy: e.approvedBy?.username ?? null,
+      source: e.source,
       // Dateiname in der URL: Bilder werden lange gecacht, IDs können sich nach einem DB-Reset wiederholen
-      imageUrl: `/api/entries/${e.id}/image?f=${e.imageFile}`,
+      imageUrl: e.imageFile ? `/api/entries/${e.id}/image?f=${e.imageFile}` : null,
       result: parseJson<{ players: { name: string; frames: number[][] }[] } | null>(e.result, null),
       scores: parseJson<number[][]>(e.scores, []),
       problems: parseJson<string[]>(e.problems, []),
@@ -82,7 +83,8 @@ export class EntriesService {
         reprocess: access.canUpload && (status === 'review' || status === 'failed'),
         approve: status === 'review' && (user.isAdmin || !isUploader),
         delete: user.isAdmin || (isUploader && status !== 'approved'),
-        unapprove: user.isAdmin && status === 'approved',
+        // Importe haben kein Analyseergebnis, das man erneut prüfen könnte
+        unapprove: user.isAdmin && status === 'approved' && !e.source,
       },
     };
   }
@@ -235,6 +237,9 @@ export class EntriesService {
     if (entry.status !== 'approved') {
       throw new ConflictException('Der Eintrag ist nicht freigegeben.');
     }
+    if (entry.source) {
+      throw new ConflictException('Importierte Einträge lassen sich nur löschen, nicht zurückziehen.');
+    }
     await this.prisma.$transaction([
       this.prisma.game.deleteMany({ where: { entryId: id } }),
       this.prisma.entry.update({ where: { id }, data: { status: 'review', approvedById: null, approvedAt: null } }),
@@ -248,11 +253,16 @@ export class EntriesService {
       throw new ForbiddenException('Diesen Eintrag darfst du nicht löschen.');
     }
     await this.prisma.entry.delete({ where: { id } });
-    await unlink(join(config.imagesDir, entry.imageFile)).catch(() => undefined);
+    if (entry.imageFile) {
+      await unlink(join(config.imagesDir, entry.imageFile)).catch(() => undefined);
+    }
   }
 
   async image(user: SessionUser, id: number): Promise<{ path: string; mime: string }> {
     const { entry } = await this.load(user, id);
+    if (!entry.imageFile || !entry.imageType) {
+      throw new NotFoundException('Zu diesem Eintrag gibt es kein Foto.');
+    }
     return { path: join(config.imagesDir, entry.imageFile), mime: entry.imageType };
   }
 }
