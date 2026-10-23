@@ -59,6 +59,8 @@ const recipientChoice = ref('');
 
 const editable = computed(() => evening.value?.can.edit ?? false);
 const attendees = computed(() => evening.value?.attendees ?? []);
+/** Teams spielen nur, sie essen und zahlen nicht */
+const persons = computed(() => players.value.filter((p) => !p.isTeam));
 const attendeeIds = computed(() => new Set(attendees.value.map((a) => a.playerId)));
 const sharedItems = computed(() => evening.value?.items.filter((i) => i.shared) ?? []);
 const me = computed(() => attendees.value.find((a) => a.isMe) ?? null);
@@ -567,7 +569,7 @@ void load();
     <article v-if="editable">
       <header>Wer ist dabei?</header>
       <div class="attendee-list">
-        <label v-for="p in players" :key="p.id" :title="attendeeLocked(p.id) ? 'Hat schon Positionen oder Anteile' : ''">
+        <label v-for="p in persons" :key="p.id" :title="attendeeLocked(p.id) ? 'Hat schon Positionen oder Anteile' : ''">
           <input
             type="checkbox"
             :checked="attendeeIds.has(p.id)"

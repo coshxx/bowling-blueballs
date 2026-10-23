@@ -29,15 +29,19 @@ const entry = ref<Entry | null>(null);
 const players = ref<Player[]>([]);
 const rows = ref<EditorRow[]>([]);
 const playedOn = ref('');
+const isTeamGame = ref(false);
 const loadError = ref<string | null>(null);
 const busy = ref(false);
 const submitError = ref<string | null>(null);
 
 const editable = computed(() => entry.value?.status === 'review' && entry.value.can.approve);
 
+/** Bei Teamspielen nur Teams, sonst nur Spieler – die Statistiken bleiben getrennt */
+const choices = computed(() => players.value.filter((p) => p.isTeam === isTeamGame.value));
+
 function playerForAlias(displayName: string): Player | undefined {
   const alias = normalizeAlias(displayName);
-  return players.value.find((p) => p.aliases.some((a) => a.alias === alias));
+  return choices.value.find((p) => p.aliases.some((a) => a.alias === alias));
 }
 
 function makeRow(displayName: string, frames: number[][], readScores: number[], texts?: string[], marks?: FrameMark[]): EditorRow {
@@ -62,6 +66,7 @@ async function load() {
     players.value = await api.listPlayers(e.groupId);
     entry.value = e;
     playedOn.value = e.playedOn;
+    isTeamGame.value = e.isTeamGame;
     rows.value = resultRows(e);
     loadError.value = null;
   } catch (err) {
@@ -94,8 +99,9 @@ const evaluated = computed(() =>
     const running = error ? [] : runningScores(frames);
     let mappingError: string | null = null;
     if (!row.displayName.trim()) mappingError = 'Anzeigename fehlt.';
-    else if (row.mapping === '') mappingError = 'Bitte einen Spieler zuordnen.';
-    else if (row.mapping === NEW_PLAYER && !row.newPlayerName.trim()) mappingError = 'Name für den neuen Spieler fehlt.';
+    else if (row.mapping === '') mappingError = isTeamGame.value ? 'Bitte ein Team zuordnen.' : 'Bitte einen Spieler zuordnen.';
+    else if (row.mapping === NEW_PLAYER && !row.newPlayerName.trim())
+      mappingError = isTeamGame.value ? 'Name für das neue Team fehlt.' : 'Name für den neuen Spieler fehlt.';
     return {
       frames,
       error,
@@ -130,6 +136,15 @@ function onDisplayNameChange(row: EditorRow) {
   if (known && row.mapping === '') row.mapping = String(known.id);
 }
 
+/** Zuordnungen passen nach dem Umschalten nicht mehr zur Art: neu aus den Aliasen vorbelegen */
+function onTeamGameChange() {
+  for (const row of rows.value) {
+    const known = playerForAlias(row.displayName);
+    row.mapping = known ? String(known.id) : '';
+    row.newPlayerName = '';
+  }
+}
+
 function addRow() {
   rows.value.push(makeRow('', [], []));
 }
@@ -148,7 +163,7 @@ async function approve() {
   busy.value = true;
   submitError.value = null;
   try {
-    await api.approve(entry.value.id, playedOn.value, payload);
+    await api.approve(entry.value.id, playedOn.value, isTeamGame.value, payload);
     await router.push({ name: 'entries' });
   } catch (e) {
     submitError.value = (e as Error).message;
@@ -163,6 +178,7 @@ async function unapprove() {
   submitError.value = null;
   try {
     entry.value = await api.unapprove(entry.value.id);
+    isTeamGame.value = entry.value.isTeamGame;
     rows.value = resultRows(entry.value);
   } catch (e) {
     submitError.value = (e as Error).message;
@@ -192,6 +208,7 @@ void load();
     <article v-if="entry.status === 'approved'">
       <header>
         Freigegeben<template v-if="entry.approvedBy"> von {{ entry.approvedBy }}</template>
+        <template v-if="entry.isTeamGame"> · Teamspiel</template>
       </header>
       <ScoreTable
         :players="
@@ -203,7 +220,7 @@ void load();
         "
       />
       <p class="muted">
-        In der Statistik:
+        In der {{ entry.isTeamGame ? 'Teamstatistik' : 'Statistik' }}:
         {{ entry.games.filter((g) => g.complete).map((g) => g.playerName).join(', ') || 'keine vollständigen Spiele' }}
       </p>
       <button v-if="entry.can.unapprove" type="button" class="secondary outline small" :disabled="busy" @click="unapprove">
@@ -228,6 +245,10 @@ void load();
           Spieldatum
           <input v-model="playedOn" type="date" required :disabled="!editable" />
         </label>
+        <label>
+          <input v-model="isTeamGame" type="checkbox" role="switch" :disabled="!editable" @change="onTeamGameChange" />
+          Teamspiel – jede Zeile ist ein Team, zählt in die eigene Teamstatistik
+        </label>
 
         <article v-for="(row, idx) in rows" :key="idx" class="row-card">
           <div class="row-head">
@@ -236,15 +257,15 @@ void load();
               <input v-model="row.displayName" :disabled="!editable" @change="onDisplayNameChange(row)" />
             </label>
             <label>
-              Spieler
+              {{ isTeamGame ? 'Team' : 'Spieler' }}
               <select v-model="row.mapping" :disabled="!editable" @change="onMappingChange(row)">
                 <option value="">– bitte wählen –</option>
-                <option v-for="p in players" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
-                <option :value="NEW_PLAYER">+ Neuer Spieler …</option>
+                <option v-for="p in choices" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
+                <option :value="NEW_PLAYER">{{ isTeamGame ? '+ Neues Team …' : '+ Neuer Spieler …' }}</option>
               </select>
             </label>
             <label v-if="row.mapping === NEW_PLAYER">
-              Name des neuen Spielers
+              {{ isTeamGame ? 'Name des neuen Teams' : 'Name des neuen Spielers' }}
               <input v-model="row.newPlayerName" :disabled="!editable" />
             </label>
             <button
@@ -323,7 +344,7 @@ void load();
         </p>
 
         <div v-if="editable" class="actions">
-          <button type="button" class="secondary outline" @click="addRow">Spieler hinzufügen</button>
+          <button type="button" class="secondary outline" @click="addRow">{{ isTeamGame ? 'Team hinzufügen' : 'Spieler hinzufügen' }}</button>
           <button type="submit" :aria-busy="busy" :disabled="!canSubmit || busy">Freigeben</button>
         </div>
       </form>

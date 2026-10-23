@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -49,6 +50,11 @@ export class ApprovePlayerDto {
 export class ApproveDto {
   @Matches(DATE_PATTERN, { message: 'Das Spieldatum muss im Format JJJJ-MM-TT sein.' })
   playedOn: string;
+
+  /** Teamspiel: alle Zeilen sind Teams statt Spieler */
+  @IsOptional()
+  @IsBoolean()
+  isTeamGame?: boolean;
 
   @ValidateNested({ each: true })
   @Type(() => ApprovePlayerDto)

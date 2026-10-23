@@ -55,6 +55,7 @@ export class EntriesService {
       groupId: e.groupId,
       status,
       uncertain: e.uncertain,
+      isTeamGame: e.isTeamGame,
       playedOn: e.playedOn,
       createdAt: e.createdAt.toISOString(),
       processedAt: e.processedAt?.toISOString() ?? null,
@@ -156,6 +157,8 @@ export class EntriesService {
     }
 
     // Erst alles prüfen, dann in einer Transaktion schreiben
+    const isTeam = dto.isTeamGame ?? false;
+    const kind = isTeam ? 'Team' : 'Spieler';
     const groupPlayers = await this.prisma.player.findMany({ where: { groupId: entry.groupId } });
     const rows = dto.players.map((p, idx) => {
       const label = `Zeile ${idx + 1} (${p.displayName})`;
@@ -167,8 +170,17 @@ export class EntriesService {
       if ((p.playerId === undefined) === (p.newPlayerName === undefined)) {
         throw new BadRequestException(`${label}: Bitte genau einen Spieler zuordnen.`);
       }
-      if (p.playerId !== undefined && !groupPlayers.some((gp) => gp.id === p.playerId)) {
+      const player = p.playerId !== undefined ? groupPlayers.find((gp) => gp.id === p.playerId) : undefined;
+      if (p.playerId !== undefined && !player) {
         throw new BadRequestException(`${label}: Spieler gehört nicht zu dieser Gruppe.`);
+      }
+      // Teams und Spieler bleiben getrennt, sonst landet ein Team in der Einzelstatistik
+      const sameName = p.newPlayerName && groupPlayers.find((gp) => gp.name.toLowerCase() === p.newPlayerName!.trim().toLowerCase());
+      const chosen = player ?? sameName;
+      if (chosen && chosen.isTeam !== isTeam) {
+        throw new BadRequestException(
+          `${label}: „${chosen.name}“ ist ${chosen.isTeam ? 'ein Team' : 'ein Spieler'}, hier ist ein ${kind} nötig.`,
+        );
       }
       const scores = runningScores(p.frames);
       return { ...p, displayName: p.displayName.trim(), score: scores.at(-1) ?? 0, complete: isComplete(p.frames) };
@@ -182,7 +194,7 @@ export class EntriesService {
           const name = row.newPlayerName!.trim();
           // Gleichnamigen Spieler wiederverwenden (z. B. zwei Zeilen mit demselben neuen Namen)
           const existing = newPlayers.get(name.toLowerCase()) ?? groupPlayers.find((gp) => gp.name.toLowerCase() === name.toLowerCase())?.id;
-          playerId = existing ?? (await tx.player.create({ data: { groupId: entry.groupId, name } })).id;
+          playerId = existing ?? (await tx.player.create({ data: { groupId: entry.groupId, name, isTeam } })).id;
           newPlayers.set(name.toLowerCase(), playerId);
         }
         const alias = normalizeAlias(row.displayName);
@@ -206,7 +218,7 @@ export class EntriesService {
       }
       const { count } = await tx.entry.updateMany({
         where: { id, status: 'review' },
-        data: { status: 'approved', playedOn: dto.playedOn, approvedById: user.id, approvedAt: new Date() },
+        data: { status: 'approved', playedOn: dto.playedOn, isTeamGame: isTeam, approvedById: user.id, approvedAt: new Date() },
       });
       if (count === 0) {
         throw new ConflictException('Der Eintrag hat sich inzwischen geändert, bitte neu laden.');

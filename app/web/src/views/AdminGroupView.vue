@@ -91,6 +91,11 @@ function linkUser(p: Player, e: Event) {
   void run(() => api.updatePlayer(p.id, { userId: value ? Number(value) : null }));
 }
 
+/** Teams nur mit Teams, Spieler nur mit Spielern */
+function mergeTargets(p: Player): Player[] {
+  return players.value.filter((t) => t.id !== p.id && t.isTeam === p.isTeam);
+}
+
 function mergePlayer(p: Player, e: Event) {
   const select = e.target as HTMLSelectElement;
   const target = players.value.find((t) => t.id === Number(select.value));
@@ -180,7 +185,7 @@ onMounted(load);
         </thead>
         <tbody>
           <tr v-for="p in players" :key="p.id">
-            <th scope="row">{{ p.name }}</th>
+            <th scope="row">{{ p.name }}<small v-if="p.isTeam" class="muted"> (Team)</small></th>
             <td>
               <span v-for="a in p.aliases" :key="a.id" class="alias">
                 {{ a.alias }}
@@ -189,7 +194,8 @@ onMounted(load);
               <span v-if="p.aliases.length === 0" class="muted">–</span>
             </td>
             <td>{{ p.games }}</td>
-            <td>
+            <td v-if="p.isTeam" class="muted">–</td>
+            <td v-else>
               <select :value="p.userId ?? ''" class="compact" :disabled="busy" aria-label="Konto verknüpfen" @change="linkUser(p, $event)">
                 <option value="">– keins –</option>
                 <option v-for="u in users" :key="u.id" :value="u.id">{{ u.username }}</option>
@@ -198,14 +204,14 @@ onMounted(load);
             <td class="actions">
               <button type="button" class="small secondary outline" :disabled="busy" @click="renamePlayer(p)">Umbenennen</button>
               <select
-                v-if="players.length > 1"
+                v-if="mergeTargets(p).length"
                 class="compact"
                 :disabled="busy"
                 aria-label="Zusammenlegen mit"
                 @change="mergePlayer(p, $event)"
               >
                 <option value="">Zusammenlegen mit …</option>
-                <option v-for="t in players.filter((t) => t.id !== p.id)" :key="t.id" :value="t.id">{{ t.name }}</option>
+                <option v-for="t in mergeTargets(p)" :key="t.id" :value="t.id">{{ t.name }}</option>
               </select>
               <button
                 v-if="p.games === 0"

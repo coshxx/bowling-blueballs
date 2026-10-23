@@ -77,8 +77,8 @@ export const api = {
   },
   getEntry: (id: number) => request<Entry>('GET', `/entries/${id}`),
   reprocess: (id: number) => request<Entry>('POST', `/entries/${id}/reprocess`),
-  approve: (id: number, playedOn: string, players: ApprovePlayer[]) =>
-    request<Entry>('POST', `/entries/${id}/approve`, { playedOn, players }),
+  approve: (id: number, playedOn: string, isTeamGame: boolean, players: ApprovePlayer[]) =>
+    request<Entry>('POST', `/entries/${id}/approve`, { playedOn, isTeamGame, players }),
   unapprove: (id: number) => request<Entry>('POST', `/entries/${id}/unapprove`),
   deleteEntry: (id: number) => request<void>('DELETE', `/entries/${id}`),
 

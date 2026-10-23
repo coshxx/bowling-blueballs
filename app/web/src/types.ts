@@ -50,6 +50,7 @@ export interface Entry {
   groupId: number;
   status: EntryStatus;
   uncertain: boolean;
+  isTeamGame: boolean;
   playedOn: string;
   createdAt: string;
   processedAt: string | null;
@@ -69,6 +70,7 @@ export interface Player {
   id: number;
   name: string;
   userId: number | null;
+  isTeam: boolean;
   username: string | null;
   avatarUrl: string | null;
   games: number;
@@ -95,9 +97,14 @@ export interface PlayerStats {
   openRate: number | null;
 }
 
-export interface GroupStats {
+export interface StatsSummary {
   players: PlayerStats[];
   timeline: { date: string; averages: Record<string, number> }[];
+}
+
+export interface GroupStats extends StatsSummary {
+  /** Teamspiele, getrennt von der Einzelstatistik */
+  teams: StatsSummary;
   leaderboardMinGames: number;
 }
 

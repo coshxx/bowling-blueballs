@@ -451,14 +451,18 @@ export class EveningsService {
       if (player?.groupId !== groupId) {
         throw new BadRequestException('Spieler gehört nicht zu dieser Gruppe.');
       }
+      if (player.isTeam) {
+        throw new BadRequestException(`„${player.name}“ ist ein Team und kann nicht an einem Abend teilnehmen.`);
+      }
       return player.id;
     }
     const name = cleanName(dto.newPlayerName!);
     const groupPlayers = await tx.player.findMany({ where: { groupId } });
-    return (
-      groupPlayers.find((p) => p.name.toLowerCase() === name.toLowerCase())?.id ??
-      (await tx.player.create({ data: { groupId, name } })).id
-    );
+    const existing = groupPlayers.find((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (existing?.isTeam) {
+      throw new BadRequestException(`„${existing.name}“ ist schon ein Team, bitte einen anderen Namen wählen.`);
+    }
+    return existing?.id ?? (await tx.player.create({ data: { groupId, name } })).id;
   }
 
   private async ensureAttendee(tx: Tx, eveningId: number, playerId: number) {

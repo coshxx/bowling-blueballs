@@ -60,6 +60,7 @@ function remove() {
         <strong>Spiel vom {{ formatDate(entry.playedOn) }}</strong>
         <span class="badge">
           {{ STATUS_LABELS[entry.status] }}<template v-if="entry.status === 'review' && entry.uncertain"> · unsicher</template>
+          <template v-if="entry.isTeamGame"> · Teamspiel</template>
         </span>
         <small>
           Hochgeladen {{ formatDateTime(entry.createdAt) }}<template v-if="entry.uploader"> von {{ entry.uploader }}</template>

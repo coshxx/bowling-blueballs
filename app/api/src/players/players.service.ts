@@ -28,6 +28,7 @@ export class PlayersService {
       id: p.id,
       name: p.name,
       userId: p.userId,
+      isTeam: p.isTeam,
       username: p.user?.username ?? null,
       avatarUrl: avatarUrl(p.user),
       games: p._count.games,
@@ -46,7 +47,10 @@ export class PlayersService {
   }
 
   async update(id: number, data: { name?: string; userId?: number | null }) {
-    await this.getPlayer(id);
+    const player = await this.getPlayer(id);
+    if (data.userId != null && player.isTeam) {
+      throw new BadRequestException('Ein Team lässt sich nicht mit einem Konto verknüpfen.');
+    }
     if (data.userId != null && !(await this.prisma.user.findUnique({ where: { id: data.userId } }))) {
       throw new BadRequestException('Benutzer nicht gefunden.');
     }
@@ -67,6 +71,9 @@ export class PlayersService {
     const target = await this.getPlayer(intoPlayerId);
     if (source.groupId !== target.groupId) {
       throw new BadRequestException('Nur Spieler derselben Gruppe lassen sich zusammenlegen.');
+    }
+    if (source.isTeam !== target.isTeam) {
+      throw new BadRequestException('Ein Team lässt sich nicht mit einem Spieler zusammenlegen.');
     }
     await this.prisma.$transaction(async (tx) => {
       await tx.game.updateMany({ where: { playerId: id }, data: { playerId: intoPlayerId } });

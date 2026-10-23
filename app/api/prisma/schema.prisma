@@ -60,6 +60,8 @@ model Player {
   name      String
   /// Optionale Verknüpfung mit einem Benutzerkonto
   userId    Int?
+  /// Team aus Teamspielen: eigene Statistik, nie mit Konto verknüpft, nicht bei Abenden
+  isTeam    Boolean       @default(false)
   createdAt DateTime      @default(now())
   group     Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
@@ -98,6 +100,8 @@ model Entry {
   status       String    @default("pending")
   /// Zwischenstände passten nach der Analyse nicht vollständig
   uncertain    Boolean   @default(false)
+  /// Teamspiel: jede Zeile ist ein Team (Player.isTeam), wird bei der Freigabe gesetzt
+  isTeamGame   Boolean   @default(false)
   /// Rohergebnis des Parsers: {"players": [{"name", "frames"}]}
   result       String?
   /// Vom Modell gelesene Zwischenstände pro Spieler (gleiche Reihenfolge wie result.players)
