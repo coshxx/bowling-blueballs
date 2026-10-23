@@ -53,11 +53,21 @@ const yTicks = computed(() => {
   return ticks;
 });
 
-/** Höchstens ~6 Datumsbeschriftungen, gleichmäßig verteilt */
+/** Abstand zwischen Datumsbeschriftungen ("28.04.2025" ist ~65 breit), damit nah beieinanderliegende Abende nicht überlappen */
+const X_TICK_GAP = 85;
+
+/** Erstes und letztes Datum immer, dazwischen nur, was genug Abstand zu beiden Nachbarn hat */
 const xTicks = computed(() => {
-  const n = props.dates.length;
-  const every = Math.max(1, Math.ceil(n / 6));
-  return props.dates.filter((_, i) => i % every === 0 || i === n - 1);
+  const dates = props.dates;
+  if (dates.length <= 1) return dates;
+  const last = dates[dates.length - 1];
+  const ticks = [dates[0]];
+  for (const d of dates.slice(1, -1)) {
+    if (x(d) - x(ticks[ticks.length - 1]) >= X_TICK_GAP && x(last) - x(d) >= X_TICK_GAP) ticks.push(d);
+  }
+  if (x(last) - x(ticks[ticks.length - 1]) >= X_TICK_GAP) ticks.push(last);
+  else ticks[ticks.length - 1] = last;
+  return ticks;
 });
 
 function path(s: Series): string {
@@ -243,6 +253,7 @@ const tooltip = computed(() => {
 }
 .legend li {
   list-style: none;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 0.4rem;
