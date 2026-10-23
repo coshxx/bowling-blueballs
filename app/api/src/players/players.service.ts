@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from '@prisma/client';
 import type { SessionUser } from '../auth/session';
 import { AccessService } from '../common/access.service';
+import { avatarUrl } from '../common/avatar';
 import { PrismaService } from '../common/prisma.service';
 
 /** Anzeigenamen vergleichen wir ohne Rücksicht auf Groß-/Kleinschreibung und Leerzeichen. */
@@ -28,6 +29,7 @@ export class PlayersService {
       name: p.name,
       userId: p.userId,
       username: p.user?.username ?? null,
+      avatarUrl: avatarUrl(p.user),
       games: p._count.games,
       aliases: p.aliases.map((a) => ({ id: a.id, alias: a.alias })),
     }));

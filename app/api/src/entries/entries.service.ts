@@ -12,6 +12,7 @@ import { mkdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { SessionUser } from '../auth/session';
 import { AccessService, GroupAccess } from '../common/access.service';
+import { avatarUrl } from '../common/avatar';
 import { isComplete, runningScores, validateFrames } from '../common/bowling';
 import { PrismaService } from '../common/prisma.service';
 import { config } from '../config';
@@ -25,13 +26,13 @@ export type EntryStatus = 'pending' | 'running' | 'review' | 'approved' | 'faile
 type EntryWithRelations = Entry & {
   uploader: User | null;
   approvedBy: User | null;
-  games: (Game & { player: Player })[];
+  games: (Game & { player: Player & { user: User | null } })[];
 };
 
 const ENTRY_INCLUDE = {
   uploader: true,
   approvedBy: true,
-  games: { include: { player: true }, orderBy: { position: 'asc' } },
+  games: { include: { player: { include: { user: true } } }, orderBy: { position: 'asc' } },
 } as const;
 
 function parseJson<T>(value: string | null, fallback: T): T {
@@ -71,6 +72,7 @@ export class EntriesService {
         displayName: g.displayName,
         playerId: g.playerId,
         playerName: g.player.name,
+        avatarUrl: avatarUrl(g.player.user),
         frames: JSON.parse(g.frames) as number[][],
         score: g.score,
         complete: g.complete,

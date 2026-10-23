@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { api } from '../api';
+import UserAvatar from '../components/UserAvatar.vue';
 import { paypalLink } from '../format';
 import { applySession, session } from '../session';
 
@@ -15,6 +16,34 @@ function normalize(input: string): string {
     .trim()
     .replace(/^(https?:\/\/)?(www\.)?paypal\.me\//i, '')
     .replace(/[/?#].*$/, '');
+}
+
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarBusy = ref(false);
+const avatarError = ref<string | null>(null);
+
+async function onAvatarSelected(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  await updateAvatar(() => api.setAvatar(file));
+}
+
+async function updateAvatar(action: () => ReturnType<typeof api.me>) {
+  avatarBusy.value = true;
+  avatarError.value = null;
+  try {
+    applySession(await action());
+  } catch (e) {
+    avatarError.value = (e as Error).message;
+  } finally {
+    avatarBusy.value = false;
+  }
+}
+
+function removeAvatar() {
+  if (confirm('Profilbild entfernen?')) void updateAvatar(() => api.removeAvatar());
 }
 
 const currentPassword = ref('');
@@ -65,6 +94,36 @@ async function save() {
 <template>
   <h2>Profil</h2>
   <article>
+    <h3>Profilbild</h3>
+    <div class="avatar-row">
+      <UserAvatar :name="session.me?.user.username ?? ''" :url="session.me?.profile.avatarUrl" :size="128" />
+      <div>
+        <input ref="avatarInput" type="file" accept="image/jpeg,image/png,image/webp" hidden @change="onAvatarSelected" />
+        <div class="actions">
+          <button type="button" :aria-busy="avatarBusy" :disabled="avatarBusy" @click="avatarInput?.click()">
+            {{ session.me?.profile.avatarUrl ? 'Anderes Bild wählen' : 'Bild hochladen' }}
+          </button>
+          <button
+            v-if="session.me?.profile.avatarUrl"
+            type="button"
+            class="secondary outline"
+            :disabled="avatarBusy"
+            @click="removeAvatar"
+          >
+            Entfernen
+          </button>
+        </div>
+        <small class="muted">JPG, PNG oder WebP, höchstens 10 MB. Das Bild wird mittig quadratisch zugeschnitten.</small>
+      </div>
+    </div>
+    <p v-if="avatarError" class="msg-error">{{ avatarError }}</p>
+    <p v-if="session.me?.profile.unlinkedGroups.length" class="msg-warn">
+      In {{ session.me.profile.unlinkedGroups.join(', ') }} ist dein Konto noch mit keinem Spieler verknüpft. Dort erscheint
+      dein Bild erst, wenn ein Admin dich mit deinem Spieler verknüpft.
+    </p>
+  </article>
+
+  <article>
     <form @submit.prevent="save">
       <label>
         PayPal.Me-Name
@@ -114,7 +173,15 @@ async function save() {
 .muted {
   color: var(--pico-muted-color);
 }
-form button {
+form button,
+.avatar-row button {
   width: auto;
+  margin-bottom: 0.5rem;
+}
+.avatar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
 }
 </style>

@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { formatDate, formatNumber } from '../format';
+import UserAvatar from './UserAvatar.vue';
 
 export interface Series {
   id: number;
   name: string;
+  avatarUrl: string | null;
   /** Kategorialer Farbslot 1–8, fest pro Spieler (nie nach Rang) */
   slot: number;
   points: { date: string; value: number }[];
@@ -108,6 +110,7 @@ const tooltip = computed(() => {
     <ul class="legend" aria-label="Legende">
       <li v-for="s in series" :key="s.id">
         <svg width="18" height="10" aria-hidden="true"><line x1="1" y1="5" x2="17" y2="5" :class="`stroke-${s.slot}`" /></svg>
+        <UserAvatar :name="s.name" :url="s.avatarUrl" :size="20" />
         {{ s.name }}
       </li>
     </ul>

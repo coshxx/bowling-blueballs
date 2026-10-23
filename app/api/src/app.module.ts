@@ -4,6 +4,8 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AdminController } from './admin/admin.controller';
 import { AdminService } from './admin/admin.service';
+import { AvatarsController } from './avatars/avatars.controller';
+import { AvatarsService } from './avatars/avatars.service';
 import { AuthController } from './auth/auth.controller';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthService } from './auth/auth.service';
@@ -38,6 +40,7 @@ const staticModules = config.webDist
   controllers: [
     AuthController,
     AdminController,
+    AvatarsController,
     EntriesController,
     PlayersController,
     StatsController,
@@ -48,6 +51,7 @@ const staticModules = config.webDist
     PrismaService,
     AccessService,
     AuthService,
+    AvatarsService,
     AdminService,
     EntriesService,
     ParserClient,

@@ -14,9 +14,11 @@ export const config = {
   port: Number(process.env.PORT ?? 8000),
   host: process.env.HOST ?? '0.0.0.0',
   imagesDir: join(dataDir, 'images'),
+  avatarsDir: join(dataDir, 'avatars'),
   parserUrl: process.env.PARSER_URL ?? 'http://parser:8080',
   webDist: process.env.WEB_DIST,
   maxUploadBytes: 20 * 1024 * 1024,
+  maxAvatarBytes: 10 * 1024 * 1024,
   sessionSecret: required('SESSION_SECRET'),
   /** Wenn gesetzt, braucht die Registrierung diesen Einladungscode (Prod); leer = offene Registrierung (Dev) */
   registerCode: process.env.REGISTER_CODE || null,

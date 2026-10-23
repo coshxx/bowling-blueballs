@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { SessionUser } from '../auth/session';
 import { AccessService } from '../common/access.service';
+import { avatarUrl } from '../common/avatar';
 import { countFrames } from '../common/bowling';
 import { PrismaService } from '../common/prisma.service';
 
@@ -26,14 +27,14 @@ export class StatsService {
     await this.access.member(user, groupId);
     const games = await this.prisma.game.findMany({
       where: { complete: true, player: { groupId }, entry: { status: 'approved' } },
-      include: { player: true },
+      include: { player: { include: { user: true } } },
       orderBy: { playedOn: 'asc' },
     });
 
-    const byPlayer = new Map<number, { name: string; scores: number[]; strikes: number; spares: number; opens: number; frames: number }>();
+    const byPlayer = new Map<number, { name: string; avatarUrl: string | null; scores: number[]; strikes: number; spares: number; opens: number; frames: number }>();
     const byDay = new Map<string, Map<number, number[]>>();
     for (const g of games) {
-      const p = byPlayer.get(g.playerId) ?? { name: g.player.name, scores: [], strikes: 0, spares: 0, opens: 0, frames: 0 };
+      const p = byPlayer.get(g.playerId) ?? { name: g.player.name, avatarUrl: avatarUrl(g.player.user), scores: [], strikes: 0, spares: 0, opens: 0, frames: 0 };
       const c = countFrames(JSON.parse(g.frames) as number[][]);
       p.scores.push(g.score);
       p.strikes += c.strikes;
@@ -51,6 +52,7 @@ export class StatsService {
       .map(([playerId, p]) => ({
         playerId,
         name: p.name,
+        avatarUrl: p.avatarUrl,
         games: p.scores.length,
         average: round1(p.scores.reduce((a, b) => a + b, 0) / p.scores.length),
         best: Math.max(...p.scores),

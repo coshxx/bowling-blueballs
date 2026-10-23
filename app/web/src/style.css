@@ -40,3 +40,11 @@ a[role='button'].small {
   gap: 0.5rem;
   align-items: center;
 }
+
+/* Name mit Avatar davor */
+.with-avatar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+  vertical-align: middle;
+}

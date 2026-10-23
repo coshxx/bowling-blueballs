@@ -3,13 +3,18 @@ import { Prisma } from '@prisma/client';
 import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { hashPassword } from '../auth/password';
+import { AvatarsService } from '../avatars/avatars.service';
 import type { SessionUser } from '../auth/session';
+import { avatarUrl } from '../common/avatar';
 import { PrismaService } from '../common/prisma.service';
 import { config } from '../config';
 
 @Injectable()
 export class AdminService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly avatars: AvatarsService,
+  ) {}
 
   // ---- Benutzer ----
 
@@ -22,6 +27,7 @@ export class AdminService {
       id: u.id,
       username: u.username,
       isAdmin: u.isAdmin,
+      avatarUrl: avatarUrl(u),
       createdAt: u.createdAt.toISOString(),
       lastSeenAt: u.lastSeenAt?.toISOString() ?? null,
       groups: u.memberships.map((m) => m.group.name).sort(),
@@ -56,6 +62,12 @@ export class AdminService {
     }
     // Uploads, Freigaben und verknüpfte Spieler bleiben erhalten (Verweis wird geleert)
     await this.prisma.user.delete({ where: { id } });
+    await this.avatars.deleteFile(user.avatarFile);
+  }
+
+  async removeAvatar(id: number) {
+    await this.avatars.remove(id);
+    return (await this.listUsers()).find((u) => u.id === id);
   }
 
   private async getUser(id: number) {

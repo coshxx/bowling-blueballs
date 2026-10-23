@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Backup der Prod-Daten (Volume bowling_data): konsistenter DB-Snapshot + Bilder → ~/backups/bowling/<datum>/
+# Backup der Prod-Daten (Volume bowling_data): konsistenter DB-Snapshot + Bilder + Avatare → ~/backups/bowling/<datum>/
 # Cron, z. B. nachts um 3:30:  30 3 * * * /home/cosh/projects/bowling2/scripts/backup.sh >> ~/backups/bowling/backup.log 2>&1
 set -euo pipefail
 
@@ -20,8 +20,9 @@ import os, shutil, sqlite3
 if os.path.exists('/backup/bowling.db'):
     os.remove('/backup/bowling.db')
 sqlite3.connect('file:/data/bowling.db?mode=ro', uri=True).execute(\"VACUUM INTO '/backup/bowling.db'\")
-if os.path.isdir('/data/images'):
-    shutil.copytree('/data/images', '/backup/images', dirs_exist_ok=True)
+for d in ('images', 'avatars'):
+    if os.path.isdir(f'/data/{d}'):
+        shutil.copytree(f'/data/{d}', f'/backup/{d}', dirs_exist_ok=True)
 "
 
 # Weitere Ziele (Samba, rclone, …) hier anhängen, z. B.: rsync -a "$dest" /mnt/nas/bowling/

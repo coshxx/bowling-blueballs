@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import type { Prisma } from '@prisma/client';
 import type { SessionUser } from '../auth/session';
 import { AccessService, GroupAccess } from '../common/access.service';
+import { avatarUrl } from '../common/avatar';
 import { cleanName, nameKey } from '../common/names';
 import { PrismaService } from '../common/prisma.service';
 import { computeBill } from './billing';
@@ -20,7 +21,7 @@ const EVENING_INCLUDE = {
   location: true,
   createdBy: true,
   recipient: { include: { user: true } },
-  attendees: { include: { player: true, paidBy: true } },
+  attendees: { include: { player: { include: { user: true } }, paidBy: true } },
   consumptions: {
     include: { player: true, menuItem: true, shares: { include: { player: true } } },
     orderBy: { createdAt: 'asc' },
@@ -69,6 +70,7 @@ export class EveningsService {
         return {
           playerId: a.playerId,
           playerName: a.player.name,
+          avatarUrl: avatarUrl(a.player.user),
           hasAccount: a.player.userId !== null,
           isMe,
           isRecipient,
@@ -89,7 +91,12 @@ export class EveningsService {
     const status: EveningStatus = settled ? 'settled' : billed ? 'billed' : 'open';
     const anyPaid = e.attendees.some((a) => a.paidAt !== null);
     const recipient = e.recipient
-      ? { playerId: e.recipient.id, playerName: e.recipient.name, paypalMe: e.recipient.user?.paypalMe ?? null }
+      ? {
+          playerId: e.recipient.id,
+          playerName: e.recipient.name,
+          avatarUrl: avatarUrl(e.recipient.user),
+          paypalMe: e.recipient.user?.paypalMe ?? null,
+        }
       : null;
 
     return {

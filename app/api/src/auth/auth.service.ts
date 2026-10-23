@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { User } from '@prisma/client';
+import { avatarUrl } from '../common/avatar';
 import { PrismaService } from '../common/prisma.service';
 import { config } from '../config';
 import { DUMMY_HASH, hashPassword, verifyPassword } from './password';
@@ -9,7 +10,12 @@ import type { SessionUser } from './session';
 export interface MeResponse {
   user: SessionUser;
   groups: { id: number; name: string; canUpload: boolean }[];
-  profile: { paypalMe: string | null };
+  profile: {
+    paypalMe: string | null;
+    avatarUrl: string | null;
+    /** Gruppen, in denen das Konto mit keinem Spieler verknüpft ist (dort erscheint der Avatar nicht) */
+    unlinkedGroups: string[];
+  };
 }
 
 @Injectable()
@@ -48,8 +54,20 @@ export class AuthService {
   }
 
   async me(user: SessionUser): Promise<MeResponse> {
-    const { paypalMe } = await this.prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { paypalMe: true } });
-    const profile = { paypalMe };
+    const { paypalMe, avatarFile } = await this.prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      select: { paypalMe: true, avatarFile: true },
+    });
+    const unlinked = await this.prisma.membership.findMany({
+      where: { userId: user.id, group: { players: { none: { userId: user.id } } } },
+      include: { group: true },
+      orderBy: { group: { name: 'asc' } },
+    });
+    const profile = {
+      paypalMe,
+      avatarUrl: avatarUrl({ id: user.id, avatarFile }),
+      unlinkedGroups: unlinked.map((m) => m.group.name),
+    };
     if (user.isAdmin) {
       // Admins sehen alle Gruppen und dürfen überall hochladen
       const groups = await this.prisma.group.findMany({ orderBy: { name: 'asc' } });

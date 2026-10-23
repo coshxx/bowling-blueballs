@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue';
 import { api } from '../api';
 import LineChart, { type Series } from '../components/LineChart.vue';
+import UserAvatar from '../components/UserAvatar.vue';
 import { formatDate, formatNumber, formatPercent } from '../format';
 import { currentGroup, session } from '../session';
 import type { GroupStats } from '../types';
@@ -31,6 +32,7 @@ const chartSeries = computed<Series[]>(() => {
   return byId.map((p, i) => ({
     id: p.playerId,
     name: p.name,
+    avatarUrl: p.avatarUrl,
     slot: i + 1,
     points: stats.value!.timeline
       .filter((t) => t.averages[p.playerId] !== undefined)
@@ -61,7 +63,10 @@ watch(() => session.groupId, load, { immediate: true });
         </p>
         <ol v-else class="leaderboard">
           <li v-for="p in leaderboard" :key="p.playerId">
-            <strong>{{ p.name }}</strong> – Schnitt {{ formatNumber(p.average) }}
+            <span class="with-avatar">
+              <UserAvatar :name="p.name" :url="p.avatarUrl" :size="32" /><strong>{{ p.name }}</strong>
+            </span>
+            – Schnitt {{ formatNumber(p.average) }}
             <small class="muted">({{ p.games }} Spiele)</small>
           </li>
         </ol>
@@ -86,7 +91,9 @@ watch(() => session.groupId, load, { immediate: true });
             </thead>
             <tbody>
               <tr v-for="p in stats.players" :key="p.playerId">
-                <th scope="row">{{ p.name }}</th>
+                <th scope="row">
+                  <span class="with-avatar"><UserAvatar :name="p.name" :url="p.avatarUrl" :size="24" />{{ p.name }}</span>
+                </th>
                 <td>{{ p.games }}</td>
                 <td><strong>{{ formatNumber(p.average) }}</strong></td>
                 <td>{{ p.best }}</td>

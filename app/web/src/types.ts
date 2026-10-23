@@ -15,7 +15,12 @@ export interface GroupRef {
 export interface MeResponse {
   user: SessionUser;
   groups: GroupRef[];
-  profile: { paypalMe: string | null };
+  profile: {
+    paypalMe: string | null;
+    avatarUrl: string | null;
+    /** Gruppen, in denen das Konto mit keinem Spieler verknüpft ist */
+    unlinkedGroups: string[];
+  };
 }
 
 /** Markierung eines vom Parser gelesenen Frames: error = sicher falsch, unsure = bitte prüfen */
@@ -34,6 +39,7 @@ export interface GameRow {
   displayName: string;
   playerId: number;
   playerName: string;
+  avatarUrl: string | null;
   frames: number[][];
   score: number;
   complete: boolean;
@@ -64,6 +70,7 @@ export interface Player {
   name: string;
   userId: number | null;
   username: string | null;
+  avatarUrl: string | null;
   games: number;
   aliases: { id: number; alias: string }[];
 }
@@ -78,6 +85,7 @@ export interface ApprovePlayer {
 export interface PlayerStats {
   playerId: number;
   name: string;
+  avatarUrl: string | null;
   games: number;
   average: number;
   best: number;
@@ -97,6 +105,7 @@ export interface AdminUser {
   id: number;
   username: string;
   isAdmin: boolean;
+  avatarUrl: string | null;
   createdAt: string;
   lastSeenAt: string | null;
   groups: string[];
@@ -159,6 +168,7 @@ export interface EveningItem {
 export interface EveningAttendee {
   playerId: number;
   playerName: string;
+  avatarUrl: string | null;
   hasAccount: boolean;
   isMe: boolean;
   isRecipient: boolean;
@@ -181,7 +191,7 @@ interface EveningBase {
   status: EveningStatus;
   owner: string | null;
   isOwner: boolean;
-  recipient: { playerId: number; playerName: string; paypalMe: string | null } | null;
+  recipient: { playerId: number; playerName: string; avatarUrl: string | null; paypalMe: string | null } | null;
   billedAt: string | null;
   createdAt: string;
   totalCents: number;

@@ -22,7 +22,7 @@ const error = ref<string | null>(null);
 /** Freigegeben: Spiele mit Spielernamen; sonst das Rohergebnis des Modells */
 const rows = computed(() =>
   props.entry.status === 'approved'
-    ? props.entry.games.map((g) => ({ name: g.playerName, frames: g.frames }))
+    ? props.entry.games.map((g) => ({ name: g.playerName, frames: g.frames, avatar: { name: g.playerName, url: g.avatarUrl } }))
     : (props.entry.result?.players ?? []),
 );
 

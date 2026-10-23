@@ -1,6 +1,26 @@
-import { Body, Controller, Get, HttpCode, HttpException, Logger, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpException,
+  Logger,
+  Patch,
+  Post,
+  Put,
+  Req,
+  Res,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
+import { memoryStorage } from 'multer';
+import { AvatarsService } from '../avatars/avatars.service';
 import { ChangePasswordDto, LoginDto, RegisterDto, UpdateProfileDto } from './auth.dto';
 import { config } from '../config';
 import { AuthService } from './auth.service';
@@ -20,7 +40,10 @@ function reason(e: unknown): string {
 export class AuthController {
   private readonly logger = new Logger('Zugriff');
 
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly avatars: AvatarsService,
+  ) {}
 
   /** Öffentlich: Das Login-Formular fragt beim Öffnen, ob es ein Feld für den Einladungscode braucht.
    *  Damit landet jeder Aufruf der Login-Seite im Log. */
@@ -109,5 +132,23 @@ export class AuthController {
   @Patch('profile')
   updateProfile(@CurrentUser() user: SessionUser, @Body() dto: UpdateProfileDto) {
     return this.auth.updateProfile(user, dto);
+  }
+
+  @Put('avatar')
+  @UseInterceptors(
+    FileInterceptor('image', { storage: memoryStorage(), limits: { fileSize: config.maxAvatarBytes, files: 1 } }),
+  )
+  async setAvatar(@CurrentUser() user: SessionUser, @UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Kein Bild hochgeladen.');
+    }
+    await this.avatars.set(user.id, file.buffer);
+    return this.auth.me(user);
+  }
+
+  @Delete('avatar')
+  async removeAvatar(@CurrentUser() user: SessionUser) {
+    await this.avatars.remove(user.id);
+    return this.auth.me(user);
   }
 }

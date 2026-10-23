@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api';
 import LocationSelect from '../components/LocationSelect.vue';
+import UserAvatar from '../components/UserAvatar.vue';
 import {
   centsToInput,
   EVENING_STATUS_LABELS,
@@ -76,7 +77,7 @@ const itemsByPerson = computed(() => {
 });
 
 type Row =
-  | { kind: 'heading'; key: string; label: string }
+  | { kind: 'heading'; key: string; label: string; person?: { name: string; avatarUrl: string | null } }
   | { kind: 'item'; key: string; item: EveningItem }
   | { kind: 'share'; key: string; name: string; cents: number; hint: string }
   | { kind: 'sum'; key: string; label: string; cents: number };
@@ -111,7 +112,7 @@ const rows = computed<Row[]>(() => [
     const items = itemsByPerson.value.find((g) => g.playerId === a.playerId)?.items ?? [];
     if (shares.length === 0 && items.length === 0) return [];
     return [
-      { kind: 'heading' as const, key: `h${a.playerId}`, label: a.playerName },
+      { kind: 'heading' as const, key: `h${a.playerId}`, label: a.playerName, person: { name: a.playerName, avatarUrl: a.avatarUrl } },
       ...shares.map((s) => ({ kind: 'share' as const, key: `s${a.playerId}-${s.name}`, ...s })),
       ...items.map((item) => ({ kind: 'item' as const, key: `i${item.id}`, item })),
       { kind: 'sum' as const, key: `t${a.playerId}`, label: `Summe ${a.playerName}`, cents: a.amountCents },
@@ -423,7 +424,14 @@ void load();
         Bezahlt<template v-if="me.paidAt"> am {{ formatDateTime(me.paidAt) }}</template>
         <template v-if="me.paidBy && me.paidBy !== session.me?.user.username"> (abgehakt von {{ me.paidBy }})</template>.
       </p>
-      <p v-else class="muted">An {{ evening.recipient?.playerName }}, der die Rechnung bezahlt hat.</p>
+      <p v-else-if="evening.recipient" class="muted">
+        An
+        <span class="with-avatar">
+          <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="24" />{{
+            evening.recipient.playerName
+          }}</span
+        >, der die Rechnung bezahlt hat.
+      </p>
       <div class="actions">
         <a
           v-if="!me.paid && evening.recipient?.paypalMe"
@@ -454,7 +462,12 @@ void load();
       <header>
         {{ evening.status === 'open' ? 'Teilnehmer & Beträge' : 'Abrechnung' }}
         <small v-if="evening.status !== 'open' && evening.recipient" class="muted">
-          · Geld an {{ evening.recipient.playerName }}
+          · Geld an
+          <span class="with-avatar">
+            <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="20" />{{
+              evening.recipient.playerName
+            }}
+          </span>
         </small>
       </header>
       <div class="overflow-auto">
@@ -462,7 +475,9 @@ void load();
           <tbody>
             <tr v-for="a in attendees" :key="a.playerId" :class="{ me: a.isMe }">
               <td>
-                {{ a.playerName }}
+                <span class="with-avatar">
+                  <UserAvatar :name="a.playerName" :url="a.avatarUrl" :size="28" />{{ a.playerName }}
+                </span>
                 <small v-if="a.isRecipient && evening.status !== 'open'" class="muted"> (Empfänger)</small>
                 <small v-else-if="!a.hasAccount" class="muted"> (Gast)</small>
               </td>
@@ -562,7 +577,7 @@ void load();
             :disabled="busy || attendeeLocked(p.id)"
             @change="toggleAttendee(p, ($event.target as HTMLInputElement).checked)"
           />
-          {{ p.name }}
+          <span class="with-avatar"><UserAvatar :name="p.name" :url="p.avatarUrl" :size="22" />{{ p.name }}</span>
         </label>
       </div>
       <form class="inline-form" @submit.prevent="addGuest">
@@ -668,7 +683,12 @@ void load();
           <tbody>
             <template v-for="row in rows" :key="row.key">
               <tr v-if="row.kind === 'heading'" class="group-row">
-                <th :colspan="editable ? 5 : 4" scope="rowgroup">{{ row.label }}</th>
+                <th :colspan="editable ? 5 : 4" scope="rowgroup">
+                  <span v-if="row.person" class="with-avatar">
+                    <UserAvatar :name="row.person.name" :url="row.person.avatarUrl" :size="22" />{{ row.label }}
+                  </span>
+                  <template v-else>{{ row.label }}</template>
+                </th>
               </tr>
               <tr v-else-if="row.kind === 'share'">
                 <td>

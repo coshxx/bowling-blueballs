@@ -2,14 +2,17 @@
 import { computed } from 'vue';
 import { frameSymbols, runningScores } from '../bowling';
 import type { ResultPlayer } from '../types';
+import UserAvatar from './UserAvatar.vue';
 
-const props = defineProps<{ players: ResultPlayer[] }>();
+/** avatar nur bei freigegebenen Spielen, die einem Spieler zugeordnet sind */
+const props = defineProps<{ players: (ResultPlayer & { avatar?: { name: string; url: string | null } })[] }>();
 
 const rows = computed(() =>
   props.players.map((p) => {
     const scores = runningScores(p.frames);
     return {
       name: p.name,
+      avatar: p.avatar,
       frames: Array.from({ length: 10 }, (_, i) => ({
         symbols: p.frames[i] ? frameSymbols(p.frames[i]) : [],
         score: scores[i],
@@ -32,7 +35,12 @@ const rows = computed(() =>
       </thead>
       <tbody>
         <tr v-for="(row, idx) in rows" :key="idx">
-          <th scope="row">{{ row.name }}</th>
+          <th scope="row">
+            <span v-if="row.avatar" class="with-avatar">
+              <UserAvatar :name="row.avatar.name" :url="row.avatar.url" :size="24" />{{ row.name }}
+            </span>
+            <template v-else>{{ row.name }}</template>
+          </th>
           <td v-for="(f, i) in row.frames" :key="i">
             <div class="rolls">
               <span v-for="(s, j) in f.symbols" :key="j">{{ s }}</span>

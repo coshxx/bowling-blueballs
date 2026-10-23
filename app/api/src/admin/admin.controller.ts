@@ -25,6 +25,11 @@ export class AdminController {
     return this.admin.deleteUser(me, id);
   }
 
+  @Delete('users/:id/avatar')
+  removeAvatar(@Param('id', ParseIntPipe) id: number) {
+    return this.admin.removeAvatar(id);
+  }
+
   @Get('groups')
   listGroups() {
     return this.admin.listGroups();

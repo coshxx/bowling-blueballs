@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from './api';
+import UserAvatar from './components/UserAvatar.vue';
 import { formatEuro } from './format';
 import { applySession, currentGroup, selectGroup, session } from './session';
 
@@ -68,7 +69,12 @@ function onGroupChange(e: Event) {
           </select>
         </li>
         <li v-else-if="currentGroup" class="muted">{{ currentGroup.name }}</li>
-        <li><RouterLink :to="{ name: 'profile' }" class="muted" title="Profil">{{ session.me.user.username }}</RouterLink></li>
+        <li>
+          <RouterLink :to="{ name: 'profile' }" class="muted with-avatar" title="Profil">
+            <UserAvatar :name="session.me.user.username" :url="session.me.profile.avatarUrl" :size="28" />
+            <span class="profile-name">{{ session.me.user.username }}</span>
+          </RouterLink>
+        </li>
         <li><a href="#" @click.prevent="logout">Abmelden</a></li>
       </ul>
     </nav>
@@ -108,5 +114,11 @@ a.router-link-exact-active {
 }
 .badge-pay {
   background: var(--status-failed);
+}
+/* Auf schmalen Bildschirmen reicht der Avatar, der Name steht im Tooltip */
+@media (max-width: 575px) {
+  .profile-name {
+    display: none;
+  }
 }
 </style>

@@ -193,7 +193,15 @@ void load();
       <header>
         Freigegeben<template v-if="entry.approvedBy"> von {{ entry.approvedBy }}</template>
       </header>
-      <ScoreTable :players="entry.games.map((g) => ({ name: `${g.playerName} (${g.displayName})`, frames: g.frames }))" />
+      <ScoreTable
+        :players="
+          entry.games.map((g) => ({
+            name: `${g.playerName} (${g.displayName})`,
+            frames: g.frames,
+            avatar: { name: g.playerName, url: g.avatarUrl },
+          }))
+        "
+      />
       <p class="muted">
         In der Statistik:
         {{ entry.games.filter((g) => g.complete).map((g) => g.playerName).join(', ') || 'keine vollständigen Spiele' }}

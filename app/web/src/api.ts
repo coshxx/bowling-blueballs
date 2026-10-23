@@ -38,7 +38,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     } catch {
       // keine JSON-Antwort
     }
-    if (res.status === 413) message = 'Das Bild ist zu groß (maximal 20 MB).';
+    if (res.status === 413) message = `Das Bild ist zu groß (maximal ${path === '/auth/avatar' ? 10 : 20} MB).`;
     if (res.status === 429) message = 'Zu viele Versuche – bitte eine Minute warten.';
     if (res.status === 401) {
       if (!path.startsWith('/auth/')) onUnauthorized();
@@ -59,6 +59,12 @@ export const api = {
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>('PATCH', '/auth/password', { currentPassword, newPassword }),
   updateProfile: (data: { paypalMe: string | null }) => request<MeResponse>('PATCH', '/auth/profile', data),
+  setAvatar: (file: File) => {
+    const body = new FormData();
+    body.append('image', file);
+    return request<MeResponse>('PUT', '/auth/avatar', body);
+  },
+  removeAvatar: () => request<MeResponse>('DELETE', '/auth/avatar'),
 
   listEntries: (groupId: number, filter?: 'review') =>
     request<Entry[]>('GET', `/groups/${groupId}/entries${filter ? `?filter=${filter}` : ''}`),
@@ -124,6 +130,7 @@ export const api = {
   adminUpdateUser: (id: number, data: { isAdmin?: boolean; password?: string }) =>
     request<AdminUser>('PATCH', `/admin/users/${id}`, data),
   adminDeleteUser: (id: number) => request<void>('DELETE', `/admin/users/${id}`),
+  adminRemoveAvatar: (id: number) => request<AdminUser>('DELETE', `/admin/users/${id}/avatar`),
   adminGroups: () => request<AdminGroup[]>('GET', '/admin/groups'),
   adminCreateGroup: (name: string) => request<{ id: number; name: string }>('POST', '/admin/groups', { name }),
   adminRenameGroup: (id: number, name: string) => request<{ id: number; name: string }>('PATCH', `/admin/groups/${id}`, { name }),

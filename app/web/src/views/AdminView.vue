@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue';
 import { api } from '../api';
 import MenuAdmin from '../components/MenuAdmin.vue';
+import UserAvatar from '../components/UserAvatar.vue';
 import { formatAgo, formatDateTime } from '../format';
 import { loadSession, session } from '../session';
 import type { AdminGroup, AdminUser } from '../types';
@@ -68,6 +69,10 @@ function setPassword(u: AdminUser) {
     await api.adminUpdateUser(u.id, { password });
     alert(`Passwort für ${u.username} gesetzt. Bestehende Anmeldungen wurden beendet.`);
   });
+}
+
+function removeAvatar(u: AdminUser) {
+  if (confirm(`Profilbild von ${u.username} entfernen?`)) void run(() => api.adminRemoveAvatar(u.id));
 }
 
 function deleteUser(u: AdminUser) {
@@ -152,7 +157,12 @@ onMounted(load);
         </thead>
         <tbody>
           <tr v-for="u in users" :key="u.id">
-            <th scope="row">{{ u.username }}<small v-if="u.id === session.me?.user.id" class="muted"> (du)</small></th>
+            <th scope="row">
+              <span class="with-avatar">
+                <UserAvatar :name="u.username" :url="u.avatarUrl" :size="24" />{{ u.username }}
+              </span>
+              <small v-if="u.id === session.me?.user.id" class="muted"> (du)</small>
+            </th>
             <td>{{ u.isAdmin ? 'Admin' : 'Benutzer' }}</td>
             <td>{{ u.groups.join(', ') || '–' }}</td>
             <td>{{ formatDateTime(u.createdAt) }}</td>
@@ -165,6 +175,9 @@ onMounted(load);
                 {{ u.isAdmin ? 'Admin entziehen' : 'Zum Admin machen' }}
               </button>
               <button type="button" class="small secondary outline" :disabled="busy" @click="setPassword(u)">Passwort setzen</button>
+              <button v-if="u.avatarUrl" type="button" class="small secondary outline" :disabled="busy" @click="removeAvatar(u)">
+                Bild entfernen
+              </button>
               <button
                 v-if="u.id !== session.me?.user.id"
                 type="button"
