@@ -64,7 +64,7 @@ watch(() => session.groupId, load, { immediate: true });
         <ol v-else class="leaderboard">
           <li v-for="p in leaderboard" :key="p.playerId">
             <span class="with-avatar">
-              <UserAvatar :name="p.name" :url="p.avatarUrl" :size="32" /><strong>{{ p.name }}</strong>
+              <UserAvatar :name="p.name" :url="p.avatarUrl" :size="48" /><strong>{{ p.name }}</strong>
             </span>
             – Schnitt {{ formatNumber(p.average) }}
             <small class="muted">({{ p.games }} Spiele)</small>
@@ -92,7 +92,7 @@ watch(() => session.groupId, load, { immediate: true });
             <tbody>
               <tr v-for="p in stats.players" :key="p.playerId">
                 <th scope="row">
-                  <span class="with-avatar"><UserAvatar :name="p.name" :url="p.avatarUrl" :size="24" />{{ p.name }}</span>
+                  <span class="with-avatar"><UserAvatar :name="p.name" :url="p.avatarUrl" :size="32" />{{ p.name }}</span>
                 </th>
                 <td>{{ p.games }}</td>
                 <td><strong>{{ formatNumber(p.average) }}</strong></td>
@@ -159,6 +159,6 @@ section {
   white-space: nowrap;
 }
 .leaderboard li {
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.5rem;
 }
 </style>

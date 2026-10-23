@@ -2,6 +2,7 @@
 import { ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '../api';
+import AvatarStack from '../components/AvatarStack.vue';
 import LocationSelect from '../components/LocationSelect.vue';
 import { EVENING_STATUS_LABELS, formatDate, formatDateTime, formatEuro, todayYmd } from '../format';
 import { currentGroup, session } from '../session';
@@ -98,7 +99,7 @@ watch(() => session.groupId, load, { immediate: true });
           <tr>
             <th>Abend</th>
             <th>Location</th>
-            <th class="num">Personen</th>
+            <th>Personen</th>
             <th class="num">Summe</th>
             <th>Status</th>
           </tr>
@@ -111,7 +112,10 @@ watch(() => session.groupId, load, { immediate: true });
               <small v-else-if="sameDayCount(e) > 1" class="muted"> · angelegt {{ formatDateTime(e.createdAt) }}</small>
             </th>
             <td>{{ e.location?.name ?? '–' }}</td>
-            <td class="num">{{ e.players || '–' }}</td>
+            <td>
+              <AvatarStack v-if="e.players.length" :people="e.players" />
+              <template v-else>–</template>
+            </td>
             <td class="num">{{ e.positions ? formatEuro(e.totalCents) : '–' }}</td>
             <td>
               <span class="status" :class="`status-${e.status}`">{{ EVENING_STATUS_LABELS[e.status] }}</span>

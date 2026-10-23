@@ -175,7 +175,11 @@ export class EveningsService {
     // Für die Liste reichen die Summen
     return evenings.map((e) => {
       const { items, attendees, problems, ...rest } = this.toDto(e, user, access);
-      return { ...rest, players: attendees.length, positions: items.length };
+      // Mit Bild zuerst: Die Übersicht zeigt nur die ersten paar Avatare
+      const players = attendees
+        .map((a) => ({ name: a.playerName, avatarUrl: a.avatarUrl }))
+        .sort((a, b) => Number(!a.avatarUrl) - Number(!b.avatarUrl) || a.name.localeCompare(b.name));
+      return { ...rest, players, positions: items.length };
     });
   }
 

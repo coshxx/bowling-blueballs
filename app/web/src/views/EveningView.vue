@@ -424,13 +424,10 @@ void load();
         Bezahlt<template v-if="me.paidAt"> am {{ formatDateTime(me.paidAt) }}</template>
         <template v-if="me.paidBy && me.paidBy !== session.me?.user.username"> (abgehakt von {{ me.paidBy }})</template>.
       </p>
-      <p v-else-if="evening.recipient" class="muted">
+      <p v-else-if="evening.recipient" class="muted recipient">
         An
-        <span class="with-avatar">
-          <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="24" />{{
-            evening.recipient.playerName
-          }}</span
-        >, der die Rechnung bezahlt hat.
+        <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="48" />
+        <span><strong>{{ evening.recipient.playerName }}</strong>, der die Rechnung bezahlt hat.</span>
       </p>
       <div class="actions">
         <a
@@ -464,7 +461,7 @@ void load();
         <small v-if="evening.status !== 'open' && evening.recipient" class="muted">
           · Geld an
           <span class="with-avatar">
-            <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="20" />{{
+            <UserAvatar :name="evening.recipient.playerName" :url="evening.recipient.avatarUrl" :size="24" />{{
               evening.recipient.playerName
             }}
           </span>
@@ -476,7 +473,7 @@ void load();
             <tr v-for="a in attendees" :key="a.playerId" :class="{ me: a.isMe }">
               <td>
                 <span class="with-avatar">
-                  <UserAvatar :name="a.playerName" :url="a.avatarUrl" :size="28" />{{ a.playerName }}
+                  <UserAvatar :name="a.playerName" :url="a.avatarUrl" :size="40" />{{ a.playerName }}
                 </span>
                 <small v-if="a.isRecipient && evening.status !== 'open'" class="muted"> (Empfänger)</small>
                 <small v-else-if="!a.hasAccount" class="muted"> (Gast)</small>
@@ -685,7 +682,7 @@ void load();
               <tr v-if="row.kind === 'heading'" class="group-row">
                 <th :colspan="editable ? 5 : 4" scope="rowgroup">
                   <span v-if="row.person" class="with-avatar">
-                    <UserAvatar :name="row.person.name" :url="row.person.avatarUrl" :size="22" />{{ row.label }}
+                    <UserAvatar :name="row.person.name" :url="row.person.avatarUrl" :size="32" />{{ row.label }}
                   </span>
                   <template v-else>{{ row.label }}</template>
                 </th>
@@ -846,6 +843,11 @@ h2 .status {
 }
 .my-share {
   border-left: 4px solid var(--status-review);
+}
+.recipient {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
 }
 .my-amount {
   font-size: 2rem;

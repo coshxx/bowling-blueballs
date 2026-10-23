@@ -201,7 +201,8 @@ interface EveningBase {
 }
 
 export interface EveningSummary extends EveningBase {
-  players: number;
+  /** Mit Bild zuerst, sonst alphabetisch */
+  players: { name: string; avatarUrl: string | null }[];
   positions: number;
 }
 
