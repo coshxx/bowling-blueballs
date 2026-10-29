@@ -13,6 +13,12 @@ export const router = createRouter({
       component: () => import('./views/EveningView.vue'),
       props: (r) => ({ id: Number(r.params.id) }),
     },
+    {
+      path: '/abende/:id/bahnen',
+      name: 'lanes',
+      component: () => import('./views/LanesView.vue'),
+      props: (r) => ({ id: Number(r.params.id) }),
+    },
     { path: '/fotos', name: 'entries', component: () => import('./views/EntriesView.vue') },
     { path: '/entries/:id', name: 'entry', component: () => import('./views/EntryView.vue'), props: (r) => ({ id: Number(r.params.id) }) },
     { path: '/stats', name: 'stats', component: () => import('./views/StatsView.vue') },

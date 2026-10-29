@@ -19,6 +19,8 @@ import { ParserClient } from './entries/parser.client';
 import { WorkerService } from './entries/worker.service';
 import { EveningsController } from './evenings/evenings.controller';
 import { EveningsService } from './evenings/evenings.service';
+import { LanesController } from './evenings/lanes.controller';
+import { LanesService } from './evenings/lanes.service';
 import { LocationsController } from './locations/locations.controller';
 import { LocationsService } from './locations/locations.service';
 import { PlayersController } from './players/players.controller';
@@ -47,6 +49,7 @@ const staticModules = config.webDist
     StatsController,
     LocationsController,
     EveningsController,
+    LanesController,
     VersionController,
   ],
   providers: [
@@ -62,6 +65,7 @@ const staticModules = config.webDist
     StatsService,
     LocationsService,
     EveningsService,
+    LanesService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
 })

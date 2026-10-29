@@ -6,6 +6,8 @@ import type {
   Entry,
   Evening,
   EveningSummary,
+  Lane,
+  Lanes,
   GroupStats,
   Location,
   Member,
@@ -106,6 +108,11 @@ export const api = {
   updateEvening: (id: number, data: { date?: string; locationId?: number | null; label?: string | null }) =>
     request<Evening>('PATCH', `/evenings/${id}`, data),
   deleteEvening: (id: number) => request<void>('DELETE', `/evenings/${id}`),
+  getLanes: (eveningId: number) => request<Lanes>('GET', `/evenings/${eveningId}/lanes`),
+  rollLanes: (eveningId: number, playerIds: number[]) =>
+    request<Lanes>('POST', `/evenings/${eveningId}/lanes/roll`, { playerIds }),
+  assignLane: (eveningId: number, playerId: number, lane: Lane) =>
+    request<Lanes>('PUT', `/evenings/${eveningId}/lanes/assignment`, { playerId, lane }),
   addAttendee: (eveningId: number, data: { playerId?: number; newPlayerName?: string }) =>
     request<Evening>('POST', `/evenings/${eveningId}/attendees`, data),
   removeAttendee: (eveningId: number, playerId: number) =>

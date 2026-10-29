@@ -233,3 +233,31 @@ export interface AddConsumption {
   quantity: number;
   unitCents: number;
 }
+
+export type Lane = 'left' | 'right';
+
+export interface LanePerson {
+  playerId: number;
+  playerName: string;
+  avatarUrl: string | null;
+}
+
+export interface LaneRound {
+  id: number;
+  number: number;
+  createdBy: string | null;
+  createdAt: string;
+  left: LanePerson[];
+  right: LanePerson[];
+}
+
+export interface Lanes {
+  eveningId: number;
+  open: boolean;
+  canRoll: boolean;
+  attendees: LanePerson[];
+  /** Ohne Bahn in der aktuellen Runde */
+  unassigned: LanePerson[];
+  /** Neueste Runde zuerst */
+  rounds: LaneRound[];
+}

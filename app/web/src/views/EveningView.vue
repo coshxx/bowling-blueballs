@@ -418,6 +418,12 @@ void load();
 
     <p v-if="error" class="msg-error">{{ error }}</p>
 
+    <p v-if="evening.attendees.length > 1">
+      <RouterLink :to="{ name: 'lanes', params: { id: evening.id } }" role="button" class="secondary outline small">
+        🎳 Bahnen auslosen
+      </RouterLink>
+    </p>
+
     <!-- Abgerechnet: eigener Anteil zuerst -->
     <article v-if="evening.status !== 'open' && me && !me.isRecipient && me.amountCents > 0" class="my-share">
       <header>Dein Anteil</header>

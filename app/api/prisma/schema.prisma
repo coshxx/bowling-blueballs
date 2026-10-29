@@ -30,6 +30,7 @@ model User {
   players        Player[]
   evenings       Evening[]
   paidMarks      EveningAttendee[]
+  laneRounds     LaneRound[]
 }
 
 model Group {
@@ -71,6 +72,7 @@ model Player {
   shares       ConsumptionShare[]
   attendances  EveningAttendee[]
   receipts     Evening[]          @relation("recipient")
+  laneAssignments LaneAssignment[]
 
   @@unique([groupId, name])
 }
@@ -198,6 +200,7 @@ model Evening {
   recipient    Player?           @relation("recipient", fields: [recipientId], references: [id], onDelete: Restrict)
   consumptions Consumption[]
   attendees    EveningAttendee[]
+  laneRounds   LaneRound[]
 
   @@index([groupId, date])
 }
@@ -255,5 +258,33 @@ model ConsumptionShare {
   player        Player      @relation(fields: [playerId], references: [id], onDelete: Restrict)
 
   @@id([consumptionId, playerId])
+  @@index([playerId])
+}
+
+/// Eine Bahnverteilung ("Auslosung") an einem Abend; die höchste Nummer gilt
+model LaneRound {
+  id          Int              @id @default(autoincrement())
+  eveningId   Int
+  /// Fortlaufend pro Abend, ab 1
+  number      Int
+  createdById Int?
+  createdAt   DateTime         @default(now())
+  evening     Evening          @relation(fields: [eveningId], references: [id], onDelete: Cascade)
+  createdBy   User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  assignments LaneAssignment[]
+
+  @@unique([eveningId, number])
+}
+
+/// Spieler einer Runde und seine Bahn
+model LaneAssignment {
+  roundId  Int
+  playerId Int
+  /// "left" | "right"
+  lane     String
+  round    LaneRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+  player   Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([roundId, playerId])
   @@index([playerId])
 }
