@@ -47,20 +47,20 @@ function onGroupChange(e: Event) {
     <nav>
       <ul>
         <li><strong>🎳 Bowling</strong></li>
-        <li>
+        <li class="desk-only">
           <RouterLink :to="{ name: 'evenings' }">
             Abende<span v-if="myOpenCents" class="badge badge-pay" title="Du hast noch etwas zu bezahlen">{{
               formatEuro(myOpenCents)
             }}</span>
           </RouterLink>
         </li>
-        <li>
+        <li class="desk-only">
           <RouterLink :to="{ name: 'entries' }">
             Fotos<span v-if="reviewCount" class="badge" :title="`${reviewCount} zur Freigabe`">{{ reviewCount }}</span>
           </RouterLink>
         </li>
-        <li><RouterLink :to="{ name: 'stats' }">Statistik</RouterLink></li>
-        <li v-if="session.me.user.isAdmin"><RouterLink :to="{ name: 'admin' }">Verwaltung</RouterLink></li>
+        <li class="desk-only"><RouterLink :to="{ name: 'stats' }">Statistik</RouterLink></li>
+        <li v-if="session.me.user.isAdmin" class="desk-only"><RouterLink :to="{ name: 'admin' }">Verwaltung</RouterLink></li>
       </ul>
       <ul>
         <li v-if="session.me.groups.length > 1">
@@ -75,13 +75,36 @@ function onGroupChange(e: Event) {
             <span class="profile-name">{{ session.me.user.username }}</span>
           </RouterLink>
         </li>
-        <li><a href="#" @click.prevent="logout">Abmelden</a></li>
+        <li class="desk-only"><a href="#" @click.prevent="logout">Abmelden</a></li>
       </ul>
     </nav>
   </header>
   <main class="container">
     <RouterView v-if="session.loaded" />
   </main>
+  <!-- Am Handy: Hauptnavigation unten, mit dem Daumen erreichbar -->
+  <nav v-if="session.me" class="tabbar" aria-label="Hauptnavigation">
+    <RouterLink :to="{ name: 'evenings' }">
+      <span class="tab-icon" aria-hidden="true">🎳</span>
+      <span>Abende</span>
+      <span v-if="myOpenCents" class="badge badge-pay" :title="`Du zahlst noch ${formatEuro(myOpenCents)}`">{{
+        formatEuro(myOpenCents)
+      }}</span>
+    </RouterLink>
+    <RouterLink :to="{ name: 'entries' }">
+      <span class="tab-icon" aria-hidden="true">📷</span>
+      <span>Fotos</span>
+      <span v-if="reviewCount" class="badge" :title="`${reviewCount} zur Freigabe`">{{ reviewCount }}</span>
+    </RouterLink>
+    <RouterLink :to="{ name: 'stats' }">
+      <span class="tab-icon" aria-hidden="true">📈</span>
+      <span>Statistik</span>
+    </RouterLink>
+    <RouterLink v-if="session.me.user.isAdmin" :to="{ name: 'admin' }">
+      <span class="tab-icon" aria-hidden="true">⚙️</span>
+      <span>Verwaltung</span>
+    </RouterLink>
+  </nav>
 </template>
 
 <style scoped>
@@ -115,10 +138,57 @@ a.router-link-exact-active {
 .badge-pay {
   background: var(--status-failed);
 }
-/* Auf schmalen Bildschirmen reicht der Avatar, der Name steht im Tooltip */
-@media (max-width: 575px) {
+.tabbar {
+  display: none;
+}
+/* Am Handy: Links wandern in die untere Leiste, oben bleiben Gruppe und Profil (Abmelden steht im Profil) */
+@media (max-width: 767px) {
+  .desk-only,
   .profile-name {
     display: none;
+  }
+  nav {
+    flex-wrap: nowrap;
+  }
+  .group-select {
+    max-width: 11rem;
+  }
+  .tabbar {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 10;
+    display: flex;
+    background: var(--pico-card-background-color, var(--pico-background-color));
+    border-top: 1px solid var(--pico-muted-border-color);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabbar a {
+    position: relative;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.1rem;
+    min-height: 3.5rem;
+    padding: 0.3rem 0.25rem;
+    font-size: 0.75rem;
+    text-decoration: none;
+    color: var(--pico-muted-color);
+  }
+  .tabbar a.router-link-active {
+    color: var(--pico-primary);
+    font-weight: 700;
+  }
+  .tab-icon {
+    font-size: 1.35rem;
+    line-height: 1;
+  }
+  .tabbar .badge {
+    position: absolute;
+    top: 0.2rem;
+    left: 50%;
+    margin: 0 0 0 0.5em;
   }
 }
 </style>

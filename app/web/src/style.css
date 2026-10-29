@@ -15,6 +15,58 @@ main.container {
   padding-top: 1rem;
 }
 
+/* Button-Gruppen (Tabs, Filter, Jahre) dürfen nie breiter als der Bildschirm werden */
+[role='group'] {
+  max-width: 100%;
+}
+[role='group'] > :is(button, a[role='button']) {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  white-space: normal;
+}
+
+/* Handy: Platz für die untere Navigation, Safe-Area (Notch) und kleinere Ränder */
+@media (max-width: 767px) {
+  main.container {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+  .container {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+  article {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 1rem;
+  }
+}
+
+/* Touch-Geräte: Tippflächen mindestens 44 px; 16 px Schrift verhindert den iOS-Zoom in Feldern */
+@media (pointer: coarse) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  button,
+  a[role='button'],
+  [type='submit'] {
+    min-height: 44px;
+  }
+  button.small,
+  a[role='button'].small {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  [type='checkbox'],
+  [type='radio'] {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
 .msg-ok {
   color: var(--status-approved);
 }

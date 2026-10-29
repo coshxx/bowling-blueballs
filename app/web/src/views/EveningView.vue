@@ -479,15 +479,15 @@ void load();
         <table class="totals">
           <tbody>
             <tr v-for="a in attendees" :key="a.playerId" :class="{ me: a.isMe }">
-              <td>
+              <td class="t-name">
                 <span class="with-avatar">
                   <UserAvatar :name="a.playerName" :url="a.avatarUrl" :size="40" />{{ a.playerName }}
                 </span>
                 <small v-if="a.isRecipient && evening.status !== 'open'" class="muted"> (Empfänger)</small>
                 <small v-else-if="!a.hasAccount" class="muted"> (Gast)</small>
               </td>
-              <td class="num">{{ formatEuro(a.amountCents) }}</td>
-              <td v-if="evening.status !== 'open'" class="paid-cell">
+              <td class="num t-amount">{{ formatEuro(a.amountCents) }}</td>
+              <td v-if="evening.status !== 'open'" class="paid-cell t-paid">
                 <template v-if="a.isRecipient">–</template>
                 <span v-else-if="a.paid" class="msg-ok" :title="a.paidAt ? `${formatDateTime(a.paidAt)}${a.paidBy ? ' von ' + a.paidBy : ''}` : ''">
                   ✓ bezahlt
@@ -495,7 +495,7 @@ void load();
                 <span v-else class="msg-warn">offen</span>
                 <small v-if="a.paidCentsDiffer" class="msg-warn"> · Betrag hat sich danach geändert</small>
               </td>
-              <td v-if="evening.status !== 'open'">
+              <td v-if="evening.status !== 'open'" class="t-action">
                 <button
                   v-if="a.canMarkPaid && !a.isMe"
                   type="button"
@@ -510,9 +510,9 @@ void load();
           </tbody>
           <tfoot>
             <tr>
-              <th scope="row">Gesamt</th>
-              <th class="num">{{ formatEuro(evening.totalCents) }}</th>
-              <th v-if="evening.status !== 'open'" colspan="2">
+              <th scope="row" class="t-name">Gesamt</th>
+              <th class="num t-amount">{{ formatEuro(evening.totalCents) }}</th>
+              <th v-if="evening.status !== 'open'" colspan="2" class="t-paid">
                 <span v-if="evening.openCents" class="msg-warn">{{ formatEuro(evening.openCents) }} offen</span>
                 <span v-else class="msg-ok">alles bezahlt</span>
               </th>
@@ -880,6 +880,17 @@ h2 .status {
 .share-edit label {
   white-space: nowrap;
 }
+/* Touch: Checkbox-Zeilen als große Tippflächen */
+@media (pointer: coarse) {
+  .attendee-list label,
+  .share-list label,
+  .share-edit label {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    margin: 0;
+  }
+}
 .share-list {
   margin-bottom: 0.5rem;
 }
@@ -1000,6 +1011,46 @@ h2 .status {
 }
 .totals {
   margin-bottom: 0.5rem;
+}
+/* Handy: Name und Betrag oben, Zahlstatus und Aktion darunter */
+@media (max-width: 600px) {
+  .totals,
+  .totals tbody,
+  .totals tfoot {
+    display: block;
+  }
+  .totals tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'name amount'
+      'paid action';
+    align-items: center;
+    gap: 0.2rem 0.5rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+  .totals th,
+  .totals td {
+    padding: 0;
+    border: 0;
+  }
+  .totals .t-name {
+    grid-area: name;
+  }
+  .totals .t-amount {
+    grid-area: amount;
+  }
+  .totals .t-paid {
+    grid-area: paid;
+  }
+  .totals .t-action {
+    grid-area: action;
+    text-align: right;
+  }
+  .totals .t-action:empty {
+    display: none;
+  }
 }
 .totals tr.me td {
   font-weight: 700;

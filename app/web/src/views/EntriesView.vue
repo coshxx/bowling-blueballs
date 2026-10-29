@@ -36,6 +36,31 @@ function onFileChange() {
   }
 }
 
+const MAX_EDGE = 2000;
+
+/** Handy-Fotos (oft 5–12 MB) vor dem Upload verkleinern; bei jedem Problem geht das Original raus */
+async function shrink(file: File): Promise<File> {
+  if (file.type !== 'image/jpeg' && file.type !== 'image/png' && file.type !== 'image/webp') return file;
+  try {
+    const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+    const scale = Math.min(1, MAX_EDGE / Math.max(bmp.width, bmp.height));
+    if (scale === 1 && file.size < 3 * 1024 * 1024) {
+      bmp.close();
+      return file;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext('2d')!.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: file.lastModified });
+  } catch {
+    return file;
+  }
+}
+
 async function upload() {
   const file = fileInput.value?.files?.[0];
   if (!file || !currentGroup.value) {
@@ -46,7 +71,7 @@ async function upload() {
   uploadMessage.value = null;
   uploadError.value = null;
   try {
-    await api.upload(currentGroup.value.id, file, playedOn.value);
+    await api.upload(currentGroup.value.id, await shrink(file), playedOn.value);
     uploadMessage.value = 'Hochgeladen. Das Bild wird im Hintergrund verarbeitet – mit F5 aktualisieren.';
     fileInput.value!.value = '';
     playedOn.value = todayYmd();

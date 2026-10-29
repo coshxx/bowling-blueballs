@@ -3,7 +3,16 @@ import { ref } from 'vue';
 import { api } from '../api';
 import UserAvatar from '../components/UserAvatar.vue';
 import { paypalLink } from '../format';
+import { useRouter } from 'vue-router';
 import { applySession, session } from '../session';
+
+const router = useRouter();
+
+async function logout() {
+  await api.logout().catch(() => undefined);
+  applySession(null);
+  await router.push({ name: 'login' });
+}
 
 const paypalMe = ref(session.me?.profile.paypalMe ?? '');
 const busy = ref(false);
@@ -167,6 +176,8 @@ async function save() {
     <p v-if="pwMessage" class="msg-ok">{{ pwMessage }}</p>
     <p v-if="pwError" class="msg-error">{{ pwError }}</p>
   </article>
+
+  <button type="button" class="secondary outline logout" @click="logout">Abmelden</button>
 </template>
 
 <style scoped>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { formatDate, formatNumber } from '../format';
 import UserAvatar from './UserAvatar.vue';
 
@@ -14,11 +14,27 @@ export interface Series {
 
 const props = defineProps<{ series: Series[]; dates: string[] }>();
 
-const W = 720;
-const H = 300;
-const PAD = { top: 16, right: 96, bottom: 32, left: 44 };
-const plotW = W - PAD.left - PAD.right;
-const plotH = H - PAD.top - PAD.bottom;
+// Das Diagramm rechnet in echten Pixeln statt in einer herunterskalierten Fläche, damit die Schrift am Handy lesbar bleibt
+const plotEl = ref<HTMLDivElement | null>(null);
+const width = ref(720);
+const W = computed(() => Math.min(720, Math.max(280, width.value)));
+const narrow = computed(() => W.value < 480);
+const H = computed(() => (narrow.value ? 240 : 300));
+// Schmal: keine Namen am Linienende, die Legende darüber reicht
+const PAD = computed(() => ({ top: 16, right: narrow.value ? 14 : 96, bottom: 32, left: narrow.value ? 34 : 44 }));
+const plotW = computed(() => W.value - PAD.value.left - PAD.value.right);
+const plotH = computed(() => H.value - PAD.value.top - PAD.value.bottom);
+
+let observer: ResizeObserver | undefined;
+onMounted(() => {
+  if (!plotEl.value) return;
+  width.value = plotEl.value.clientWidth || 720;
+  observer = new ResizeObserver(() => {
+    width.value = plotEl.value?.clientWidth || 720;
+  });
+  observer.observe(plotEl.value);
+});
+onBeforeUnmount(() => observer?.disconnect());
 
 const dayMs = (d: string) => Date.parse(`${d}T00:00:00Z`);
 
@@ -29,7 +45,7 @@ const xDomain = computed(() => {
 
 function x(date: string): number {
   const [min, max] = xDomain.value;
-  return PAD.left + (max === min ? plotW / 2 : ((dayMs(date) - min) / (max - min)) * plotW);
+  return PAD.value.left + (max === min ? plotW.value / 2 : ((dayMs(date) - min) / (max - min)) * plotW.value);
 }
 
 /** y-Achse auf 20er-Schritte gerundet, innerhalb 0–300 */
@@ -42,7 +58,7 @@ const yDomain = computed(() => {
 
 function y(value: number): number {
   const [lo, hi] = yDomain.value;
-  return PAD.top + plotH - ((value - lo) / (hi - lo)) * plotH;
+  return PAD.value.top + plotH.value - ((value - lo) / (hi - lo)) * plotH.value;
 }
 
 const yTicks = computed(() => {
@@ -76,7 +92,7 @@ function path(s: Series): string {
 
 /** Direkte Beschriftung am Linienende nur bei <= 4 Serien, vertikal entzerrt */
 const endLabels = computed(() => {
-  if (props.series.length > 4) return [];
+  if (props.series.length > 4 || narrow.value) return [];
   const labels = props.series
     .filter((s) => s.points.length)
     .map((s) => {
@@ -98,7 +114,7 @@ function onPointerMove(e: PointerEvent) {
   const svg = svgEl.value;
   if (!svg || !props.dates.length) return;
   const rect = svg.getBoundingClientRect();
-  const px = ((e.clientX - rect.left) / rect.width) * W;
+  const px = ((e.clientX - rect.left) / rect.width) * W.value;
   hoverDate.value = props.dates.reduce((best, d) => (Math.abs(x(d) - px) < Math.abs(x(best) - px) ? d : best));
 }
 
@@ -110,7 +126,7 @@ const tooltip = computed(() => {
     .filter((r) => r.p)
     .map((r) => ({ id: r.s.id, name: r.s.name, slot: r.s.slot, value: r.p!.value }))
     .sort((a, b) => b.value - a.value);
-  const leftPct = (x(date) / W) * 100;
+  const leftPct = (x(date) / W.value) * 100;
   return { date, rows, leftPct, alignRight: leftPct > 60 };
 });
 </script>
@@ -124,7 +140,7 @@ const tooltip = computed(() => {
         {{ s.name }}
       </li>
     </ul>
-    <div class="plot">
+    <div ref="plotEl" class="plot">
       <svg
         ref="svgEl"
         :viewBox="`0 0 ${W} ${H}`"

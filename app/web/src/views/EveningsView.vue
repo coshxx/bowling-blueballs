@@ -94,7 +94,7 @@ watch(() => session.groupId, load, { immediate: true });
     <p v-if="loadError" class="msg-error">Abende konnten nicht geladen werden: {{ loadError }}</p>
     <p v-else-if="evenings.length === 0">Noch keine Abende.</p>
     <div v-else class="overflow-auto">
-      <table>
+      <table class="cards">
         <thead>
           <tr>
             <th>Abend</th>
@@ -111,13 +111,13 @@ watch(() => session.groupId, load, { immediate: true });
               <small v-if="e.label" class="muted"> · {{ e.label }}</small>
               <small v-else-if="sameDayCount(e) > 1" class="muted"> · angelegt {{ formatDateTime(e.createdAt) }}</small>
             </th>
-            <td>{{ e.location?.name ?? '–' }}</td>
-            <td>
+            <td class="c-loc">{{ e.location?.name ?? '–' }}</td>
+            <td class="c-people">
               <AvatarStack v-if="e.players.length" :people="e.players" />
               <template v-else>–</template>
             </td>
-            <td class="num">{{ e.positions ? formatEuro(e.totalCents) : '–' }}</td>
-            <td>
+            <td class="num c-sum">{{ e.positions ? formatEuro(e.totalCents) : '–' }}</td>
+            <td class="c-status">
               <span class="status" :class="`status-${e.status}`">{{ EVENING_STATUS_LABELS[e.status] }}</span>
               <RouterLink v-if="e.myOpenCents" :to="{ name: 'evening', params: { id: e.id } }" class="my-open">
                 du zahlst {{ formatEuro(e.myOpenCents) }}
@@ -132,6 +132,58 @@ watch(() => session.groupId, load, { immediate: true });
 </template>
 
 <style scoped>
+/* Handy: jede Zeile wird zur Karte, damit nichts seitlich scrollen muss */
+@media (max-width: 600px) {
+  .cards thead {
+    display: none;
+  }
+  .cards,
+  .cards tbody {
+    display: block;
+  }
+  .cards tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      'date status'
+      'loc sum'
+      'people people';
+    gap: 0.2rem 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+  }
+  .cards th,
+  .cards td {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .cards th {
+    grid-area: date;
+    font-size: 1.1em;
+  }
+  .cards .c-status {
+    grid-area: status;
+    text-align: right;
+  }
+  .cards .c-loc {
+    grid-area: loc;
+    color: var(--pico-muted-color);
+  }
+  .cards .c-sum {
+    grid-area: sum;
+  }
+  .cards .c-people {
+    grid-area: people;
+  }
+  .cards .c-people:empty {
+    display: none;
+  }
+  .my-open {
+    display: block;
+    margin-left: 0;
+  }
+}
 .muted {
   color: var(--pico-muted-color);
 }

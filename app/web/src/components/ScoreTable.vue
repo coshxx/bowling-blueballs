@@ -68,6 +68,22 @@ const rows = computed(() =>
 .score tbody th {
   text-align: left;
 }
+/* Name bleibt beim seitlichen Scrollen stehen; der Schatten zeigt, dass rechts noch mehr kommt */
+.score tbody th,
+.score thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--pico-card-background-color, var(--pico-background-color));
+  box-shadow: 4px 0 4px -4px rgba(0, 0, 0, 0.35);
+}
+@media (max-width: 767px) {
+  .score tbody th {
+    max-width: 6.5rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
 .rolls {
   display: flex;
   justify-content: center;
