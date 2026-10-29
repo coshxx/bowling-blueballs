@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from './api';
 import UserAvatar from './components/UserAvatar.vue';
 import { formatEuro } from './format';
+import { avatarZoom, closeAvatarZoom } from './avatarZoom';
 import { applySession, currentGroup, selectGroup, session } from './session';
 
 const router = useRouter();
@@ -30,6 +31,12 @@ watch(
   },
   { immediate: true },
 );
+
+function onKey(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeAvatarZoom();
+}
+onMounted(() => window.addEventListener('keydown', onKey));
+onBeforeUnmount(() => window.removeEventListener('keydown', onKey));
 
 async function logout() {
   await api.logout().catch(() => undefined);
@@ -71,7 +78,7 @@ function onGroupChange(e: Event) {
         <li v-else-if="currentGroup" class="muted">{{ currentGroup.name }}</li>
         <li>
           <RouterLink :to="{ name: 'profile' }" class="muted with-avatar" title="Profil">
-            <UserAvatar :name="session.me.user.username" :url="session.me.profile.avatarUrl" :size="28" />
+            <UserAvatar :name="session.me.user.username" :url="session.me.profile.avatarUrl" :size="28" :zoom="false" />
             <span class="profile-name">{{ session.me.user.username }}</span>
           </RouterLink>
         </li>
@@ -82,6 +89,13 @@ function onGroupChange(e: Event) {
   <main class="container">
     <RouterView v-if="session.loaded" />
   </main>
+  <!-- Vergrößertes Profilfoto: Tippen irgendwo oder Escape schließt -->
+  <div v-if="avatarZoom.url" class="avatar-zoom" role="dialog" :aria-label="`Foto von ${avatarZoom.name}`" @click="closeAvatarZoom">
+    <figure>
+      <img :src="avatarZoom.url" :alt="`Foto von ${avatarZoom.name}`" />
+      <figcaption>{{ avatarZoom.name }}</figcaption>
+    </figure>
+  </div>
   <!-- Am Handy: Hauptnavigation unten, mit dem Daumen erreichbar -->
   <nav v-if="session.me" class="tabbar" aria-label="Hauptnavigation">
     <RouterLink :to="{ name: 'evenings' }">
@@ -137,6 +151,33 @@ a.router-link-exact-active {
 }
 .badge-pay {
   background: var(--status-failed);
+}
+.avatar-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  cursor: zoom-out;
+}
+.avatar-zoom figure {
+  margin: 0;
+  text-align: center;
+  color: #fff;
+}
+.avatar-zoom img {
+  display: block;
+  width: min(256px, 80vw);
+  height: min(256px, 80vw);
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 0 0 4px #fff, 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.avatar-zoom figcaption {
+  margin-top: 1rem;
+  font-size: 1.25rem;
+  font-weight: 700;
 }
 .tabbar {
   display: none;
