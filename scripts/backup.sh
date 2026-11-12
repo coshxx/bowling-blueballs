@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Backup der Prod-Daten (Volume bowling_data): konsistenter DB-Snapshot + Bilder + Avatare → ~/backups/bowling/<datum>/
-# Cron, z. B. nachts um 3:30:  30 3 * * * /home/cosh/projects/bowling2/scripts/backup.sh >> ~/backups/bowling/backup.log 2>&1
+# Cron, z. B. nachts um 3:30:  30 3 * * * <repo>/scripts/backup.sh >> ~/backups/bowling/backup.log 2>&1
 set -euo pipefail
 
 VOLUME=${VOLUME:-bowling_data}

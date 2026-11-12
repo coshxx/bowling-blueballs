@@ -17,7 +17,7 @@ docker compose up -d
 
 ## Produktion
 
-Läuft als eigenes Compose-Projekt `bowling` mit eigenen Daten (Volume `bowling_data`), parallel zur Dev-Umgebung möglich. Die Ollama-Modelle werden mit Dev geteilt (Volume `bowling2_ollama-models`). Läuft Dev noch nie, vorher einmal `docker volume create bowling2_ollama-models`.
+Läuft als eigenes Compose-Projekt `bowling` mit eigenen Daten (Volume `bowling_data`), parallel zur Dev-Umgebung möglich. Die Ollama-Modelle werden mit Dev geteilt (Volume `bowling2_ollama-models`). Lief Dev noch nie, vorher einmal `docker volume create bowling2_ollama-models`.
 
 Einmalig:
 
@@ -41,19 +41,19 @@ Am Host wird kein Port geöffnet: Die App lauscht nur auf `127.0.0.1:8000` im Ne
 
 ### Backup
 
-`scripts/backup.sh` legt einen konsistenten DB-Snapshot und die Bilder unter `~/backups/bowling/<datum>/` ab und löscht Backups, die älter als 14 Tage sind. Einrichten:
+`scripts/backup.sh` legt einen konsistenten DB-Snapshot, die Bilder und Avatare unter `~/backups/bowling/<datum>/` ab und löscht Backups, die älter als 14 Tage sind. Einrichten:
 
 ```sh
 mkdir -p ~/backups/bowling
 crontab -e
-# 30 3 * * * /home/cosh/projects/bowling2/scripts/backup.sh >> ~/backups/bowling/backup.log 2>&1
+# 30 3 * * * <repo>/scripts/backup.sh >> ~/backups/bowling/backup.log 2>&1
 ```
 
-Wiederherstellen: Prod stoppen, dann Snapshot und Bilder zurück ins Volume kopieren:
+Wiederherstellen: Prod stoppen, dann Snapshot, Bilder und Avatare zurück ins Volume kopieren:
 
 ```sh
 docker compose -f compose.prod.yaml stop app
 docker run --rm -v bowling_data:/data -v ~/backups/bowling/<datum>:/backup alpine \
-  sh -c 'cp /backup/bowling.db /data/ && cp -r /backup/images /data/ && chown -R 1000:1000 /data'
+  sh -c 'cp /backup/bowling.db /data/ && cp -r /backup/images /backup/avatars /data/ && chown -R 1000:1000 /data'
 docker compose -f compose.prod.yaml start app
 ```
