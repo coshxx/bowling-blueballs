@@ -33,8 +33,28 @@ exactly two symbols (e.g. "9 -", "- 7", "8 /"), the 10th frame can have three.
 For each player (top to bottom) return:
 - "name": the player name
 - "rolls": all roll symbols of the upper line in order, separated by single spaces (e.g. "X 3 / 6 3 - 7")
-- "scores": all numbers of the lower line in order
+- "scores": all numbers of the lower line in order (at most 10)
+Keep the lines of different players apart: the totals line belongs to "scores" only, never to "rolls",
+and the next player's roll line never belongs to the previous player's "scores".
+Every player row must be returned, including the last one at the bottom.
 Only transcribe what is displayed, do not calculate anything."""
+
+# Wird an PROMPT angehängt, wenn die Spieler vorab gezählt wurden
+PLAYERS_HINT = """
+
+The scoreboard shows exactly {count} players, top to bottom: {names}.
+Return all {count} of them, in this order."""
+
+NAMES_PROMPT = """This is a photo of a bowling alley score display.
+Look only at the scoreboard that is fully visible, ignore other screens that are cut off at the image border.
+List the names of all players on that scoreboard, top to bottom. Each player has a name on the left,
+followed by a line of roll symbols and a line of running totals. Do not leave out the last player."""
+
+NAMES_SCHEMA = {
+    "type": "object",
+    "properties": {"names": {"type": "array", "items": {"type": "string"}}},
+    "required": ["names"],
+}
 
 SCHEMA = {
     "type": "object",
@@ -88,16 +108,29 @@ def ensure_model() -> None:
     log("Modell bereit.")
 
 
-def ask_model(image_b64: str, temperature: float) -> dict:
+def ask_model(image_b64: str, temperature: float, prompt: str = PROMPT, schema: dict = SCHEMA) -> dict:
     payload = {
         "model": MODEL,
         "stream": False,
-        "format": SCHEMA,
+        "format": schema,
         "options": {"temperature": temperature, "num_ctx": 8192},
-        "messages": [{"role": "user", "content": PROMPT, "images": [image_b64]}],
+        "messages": [{"role": "user", "content": prompt, "images": [image_b64]}],
     }
     with api("/api/chat", payload, timeout=1800) as r:
         return json.loads(json.load(r)["message"]["content"])
+
+
+def read_names(image_b64: str) -> list[str] | None:
+    """Fragt nur die Spielernamen ab (kurze Antwort, schnell), um die Spielerzahl zu kennen.
+    None, wenn das Modell nichts Brauchbares liefert; dann läuft die Analyse ohne diese Prüfung."""
+    try:
+        raw = ask_model(image_b64, 0.0, NAMES_PROMPT, NAMES_SCHEMA)
+        names = [str(n).strip() for n in raw["names"] if str(n).strip()]
+    except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as e:
+        log(f"  Spielernamen nicht lesbar: {e!r}")
+        return None
+    log(f"  Spieler laut Namensabfrage: {names}")
+    return names if 1 <= len(names) <= 8 else None
 
 
 class PlayerResult(NamedTuple):
@@ -160,6 +193,65 @@ def check_player(p: dict) -> PlayerResult:
     return PlayerResult(name, frames, pad(texts, ""), pad(marks), problems, shown, float("inf") if bad else 0.0)
 
 
+def _is_totals(values: list[int]) -> bool:
+    """Ob eine Zahlenfolge wie eine Zeile mit Zwischenständen aussieht."""
+    return 0 < len(values) <= 10 and all(0 <= v <= 300 for v in values) and values == sorted(values)
+
+
+def realign(players: list[dict]) -> list[dict] | None:
+    """Repariert eine typische Verschiebung des Modells bei mehreren Spielern: Es hängt die
+    Zwischenstände eines Spielers an dessen Wurfzeile, liefert die Wurfzeile des nächsten als
+    dessen "scores" und so weiter. Alle Zeilen werden der Reihe nach neu als Würfe bzw.
+    Zwischenstände eingeordnet und wieder den Spielern zugeteilt. None, wenn nichts verschoben ist."""
+    lines: list[tuple[str, object]] = []  # ("rolls", str) | ("totals", list[int])
+    for p in players:
+        tokens = str(p["rolls"]).split()
+        # Am Ende der Wurfzeile hängende Zwischenstände abtrennen (längste aufsteigende Zahlenfolge)
+        tail = len(tokens)
+        while tail > 0 and tokens[tail - 1].isdigit() and _is_totals([int(t) for t in tokens[tail - 1:]]):
+            tail -= 1
+        if len(tokens) - tail >= 3:
+            if tail:
+                lines.append(("rolls", " ".join(tokens[:tail])))
+            lines.append(("totals", [int(t) for t in tokens[tail:]]))
+        elif tokens and all(t.isdigit() for t in tokens) and _is_totals([int(t) for t in tokens]) and len(tokens) >= 3:
+            lines.append(("totals", [int(t) for t in tokens]))
+        elif tokens:
+            lines.append(("rolls", " ".join(tokens)))
+        scores = [int(s) for s in p["scores"]]
+        if scores:
+            # Eine nicht aufsteigende "Zwischenstand"-Zeile ist die verlesene Wurfzeile des nächsten Spielers
+            lines.append(("totals", scores) if _is_totals(scores) else ("rolls", " ".join(map(str, scores))))
+
+    fixed: list[dict] = []
+    i = 0
+    for p in players:
+        rolls = ""
+        if i < len(lines) and lines[i][0] == "rolls":
+            rolls = lines[i][1]
+            i += 1
+        if i >= len(lines) or lines[i][0] != "totals":
+            return None
+        fixed.append({"name": p["name"], "rolls": rolls, "scores": lines[i][1]})
+        i += 1
+    if i != len(lines) or all(f["rolls"] == str(p["rolls"]) and f["scores"] == list(p["scores"])
+                              for f, p in zip(fixed, players)):
+        return None
+    return fixed
+
+
+def check_players(raw_players: list[dict]) -> list[PlayerResult]:
+    players = [check_player(p) for p in raw_players]
+    fixed = realign(raw_players)
+    if fixed is not None:
+        alt = [check_player(p) for p in fixed]
+        total = lambda rs: tuple(map(sum, zip(*(r.rank() for r in rs))))  # noqa: E731
+        if total(alt) < total(players):
+            log(f"  Verschobene Zeilen neu zugeordnet: {json.dumps(fixed, ensure_ascii=False)}")
+            return alt
+    return players
+
+
 def format_json(data: dict) -> str:
     """Wie json.dumps(indent=2), aber jeder Frame in einer Zeile: [9, 1]."""
     text = json.dumps(data, ensure_ascii=False, indent=2)
@@ -178,15 +270,28 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
     pro Spieler (gleiche Reihenfolge wie result["players"])."""
     ensure_model()
 
+    names = read_names(image_b64)
+    expected = len(names) if names else None
+    prompt = PROMPT + PLAYERS_HINT.format(count=expected, names=", ".join(names)) if names else PROMPT
+
+    def count_problems(players: list[PlayerResult]) -> list[str]:
+        if expected is None or len(players) == expected:
+            return []
+        return [f"{len(players)} von {expected} Spielern erkannt ({', '.join(names)}), bitte prüfen"]
+
+    def count_rank(players: list[PlayerResult]) -> int:
+        """Kleiner = besser: nah an der gezählten Spielerzahl, ohne Zählung möglichst viele Spieler."""
+        return abs(len(players) - expected) if expected is not None else -len(players)
+
     best: list[PlayerResult] | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         temperature = 0.0 if attempt == 1 else 0.5
         log(f"Versuch {attempt}/{MAX_ATTEMPTS} mit {MODEL} (temperature={temperature}) ...")
         start = time.time()
         try:
-            raw = ask_model(image_b64, temperature)
+            raw = ask_model(image_b64, temperature, prompt)
             log(f"  Antwort nach {time.time() - start:.0f}s: {json.dumps(raw, ensure_ascii=False)}")
-            players = [check_player(p) for p in raw["players"]]
+            players = check_players(raw["players"])
         except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as e:
             log(f"  Unbrauchbare Antwort: {e!r}")
             continue
@@ -194,15 +299,16 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
             log("  Keine Spieler erkannt.")
             continue
 
-        # Spieler werden über ihre Position zugeordnet, Namen können zwischen Versuchen abweichen
-        if best is None:
+        # Spieler werden über ihre Position zugeordnet, Namen können zwischen Versuchen abweichen.
+        # Eine passendere Spielerzahl schlägt alles andere: ein fehlender Spieler fällt sonst nicht auf.
+        if best is None or count_rank(players) < count_rank(best):
             best = players
         elif len(players) != len(best):
             log(f"  {len(players)} statt {len(best)} Spieler erkannt, Versuch wird nicht übernommen.")
         else:
             best = [new if new.rank() < old.rank() else old for old, new in zip(best, players)]
 
-        open_problems = [p for r in best for p in r.problems]
+        open_problems = count_problems(best) + [p for r in best for p in r.problems]
         if not open_problems:
             log("  Alle Zwischenstände stimmen.")
             break
@@ -212,7 +318,7 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
     if best is None:
         raise ParseError("Kein verwertbares Ergebnis vom Modell")
     result = {"players": [{"name": r.name, "frames": r.frames, "texts": r.texts, "marks": r.marks} for r in best]}
-    return result, [p for r in best for p in r.problems], [r.scores for r in best]
+    return result, count_problems(best) + [p for r in best for p in r.problems], [r.scores for r in best]
 
 
 def main() -> int:
