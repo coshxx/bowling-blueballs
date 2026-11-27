@@ -46,9 +46,9 @@ The scoreboard shows exactly {count} players, top to bottom: {names}.
 Return all {count} of them, in this order."""
 
 NAMES_PROMPT = """This is a photo of a bowling alley score display.
-Look only at the scoreboard that is fully visible, ignore other screens that are cut off at the image border.
-List the names of all players on that scoreboard, top to bottom. Each player has a name on the left,
-followed by a line of roll symbols and a line of running totals. Do not leave out the last player."""
+Look at the scoreboard. Count the rows of running totals (the lines with large ascending numbers);
+each such row belongs to one player. Return the player names top to bottom, one per totals row.
+Names may touch the image border. Do not leave out the last player."""
 
 NAMES_SCHEMA = {
     "type": "object",
@@ -198,26 +198,44 @@ def _is_totals(values: list[int]) -> bool:
     return 0 < len(values) <= 10 and all(0 <= v <= 300 for v in values) and values == sorted(values)
 
 
-def realign(players: list[dict]) -> list[dict] | None:
+def _split_line(tokens: list[str]) -> list[tuple[str, object]]:
+    """Zerlegt eine gelesene Zeile in Wurf- und Zwischenstandszeilen. Das Modell hängt manchmal
+    Zwischenstände und sogar die Wurfzeile des nächsten Spielers an. Als Zwischenstände gilt
+    eine aufsteigende Zahlenfolge mit mindestens drei Zahlen, davon mindestens zwei zweistellig
+    (Würfe sind einstellig, bis auf zusammengezogene wie "73" im 10. Frame)."""
+    lines: list[tuple[str, object]] = []
+    rolls: list[str] = []
+    i = 0
+    while i < len(tokens):
+        j = i
+        while j < len(tokens) and tokens[j].isdigit() and (j == i or int(tokens[j]) >= int(tokens[j - 1])):
+            j += 1
+        values = [int(t) for t in tokens[i:j]][-10:]
+        if len(values) >= 3 and sum(v >= 10 for v in values) >= 2 and all(v <= 300 for v in values):
+            rolls += tokens[i:j - len(values)]
+            if rolls:
+                lines.append(("rolls", " ".join(rolls)))
+                rolls = []
+            lines.append(("totals", values))
+            i = j
+        else:
+            rolls.append(tokens[i])
+            i += 1
+    if rolls:
+        lines.append(("rolls", " ".join(rolls)))
+    return lines
+
+
+def realign(players: list[dict], names: list[str] | None = None) -> list[dict] | None:
     """Repariert eine typische Verschiebung des Modells bei mehreren Spielern: Es hängt die
     Zwischenstände eines Spielers an dessen Wurfzeile, liefert die Wurfzeile des nächsten als
-    dessen "scores" und so weiter. Alle Zeilen werden der Reihe nach neu als Würfe bzw.
-    Zwischenstände eingeordnet und wieder den Spielern zugeteilt. None, wenn nichts verschoben ist."""
+    dessen "scores" und so weiter, oder quetscht einen ganzen weiteren Spieler in eine Zeile.
+    Alle Zeilen werden der Reihe nach neu als Würfe bzw. Zwischenstände eingeordnet und wieder
+    den Spielern zugeteilt; übrig gebliebene Zeilenpaare werden zu weiteren Spielern (Name aus
+    der Namensabfrage, sonst ein Platzhalter). None, wenn nichts verschoben ist."""
     lines: list[tuple[str, object]] = []  # ("rolls", str) | ("totals", list[int])
     for p in players:
-        tokens = str(p["rolls"]).split()
-        # Am Ende der Wurfzeile hängende Zwischenstände abtrennen (längste aufsteigende Zahlenfolge)
-        tail = len(tokens)
-        while tail > 0 and tokens[tail - 1].isdigit() and _is_totals([int(t) for t in tokens[tail - 1:]]):
-            tail -= 1
-        if len(tokens) - tail >= 3:
-            if tail:
-                lines.append(("rolls", " ".join(tokens[:tail])))
-            lines.append(("totals", [int(t) for t in tokens[tail:]]))
-        elif tokens and all(t.isdigit() for t in tokens) and _is_totals([int(t) for t in tokens]) and len(tokens) >= 3:
-            lines.append(("totals", [int(t) for t in tokens]))
-        elif tokens:
-            lines.append(("rolls", " ".join(tokens)))
+        lines += _split_line(str(p["rolls"]).split())
         scores = [int(s) for s in p["scores"]]
         if scores:
             # Eine nicht aufsteigende "Zwischenstand"-Zeile ist die verlesene Wurfzeile des nächsten Spielers
@@ -225,27 +243,45 @@ def realign(players: list[dict]) -> list[dict] | None:
 
     fixed: list[dict] = []
     i = 0
-    for p in players:
+    while i < len(lines):
         rolls = ""
-        if i < len(lines) and lines[i][0] == "rolls":
+        if lines[i][0] == "rolls":
             rolls = lines[i][1]
             i += 1
         if i >= len(lines) or lines[i][0] != "totals":
             return None
-        fixed.append({"name": p["name"], "rolls": rolls, "scores": lines[i][1]})
+        k = len(fixed)
+        if k < len(players):
+            name = players[k]["name"]
+        elif names and k < len(names):
+            name = names[k]
+        else:
+            name = f"Spieler {k + 1}"
+        fixed.append({"name": name, "rolls": rolls, "scores": lines[i][1]})
         i += 1
-    if i != len(lines) or all(f["rolls"] == str(p["rolls"]) and f["scores"] == list(p["scores"])
-                              for f, p in zip(fixed, players)):
+    if len(fixed) < len(players) or (len(fixed) == len(players) and all(
+            f["rolls"] == str(p["rolls"]) and f["scores"] == list(p["scores"]) for f, p in zip(fixed, players))):
         return None
     return fixed
 
 
-def check_players(raw_players: list[dict]) -> list[PlayerResult]:
+def count_key(players: list[PlayerResult], expected: int | None) -> tuple[int, int]:
+    """Kleiner = besser. Fehlende Spieler (gemessen an der Namensabfrage) wiegen am schwersten.
+    Die Namensabfrage kann aber auch zu wenige liefern: Weitere Spieler zählen positiv, sofern
+    ihre Würfe zu den Zwischenständen passen (also kein Lesemüll sind)."""
+    if expected is None:
+        return 0, -len(players)
+    extra = sum(1 for r in players[expected:] if "error" not in r.marks)
+    return max(0, expected - len(players)), -extra
+
+
+def check_players(raw_players: list[dict], names: list[str] | None = None) -> list[PlayerResult]:
     players = [check_player(p) for p in raw_players]
-    fixed = realign(raw_players)
+    fixed = realign(raw_players, names)
     if fixed is not None:
         alt = [check_player(p) for p in fixed]
-        total = lambda rs: tuple(map(sum, zip(*(r.rank() for r in rs))))  # noqa: E731
+        expected = len(names) if names else len(players)
+        total = lambda rs: (count_key(rs, expected), tuple(map(sum, zip(*(r.rank() for r in rs)))))  # noqa: E731
         if total(alt) < total(players):
             log(f"  Verschobene Zeilen neu zugeordnet: {json.dumps(fixed, ensure_ascii=False)}")
             return alt
@@ -275,13 +311,12 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
     prompt = PROMPT + PLAYERS_HINT.format(count=expected, names=", ".join(names)) if names else PROMPT
 
     def count_problems(players: list[PlayerResult]) -> list[str]:
-        if expected is None or len(players) == expected:
+        if expected is None or len(players) >= expected:
             return []
         return [f"{len(players)} von {expected} Spielern erkannt ({', '.join(names)}), bitte prüfen"]
 
-    def count_rank(players: list[PlayerResult]) -> int:
-        """Kleiner = besser: nah an der gezählten Spielerzahl, ohne Zählung möglichst viele Spieler."""
-        return abs(len(players) - expected) if expected is not None else -len(players)
+    def count_rank(players: list[PlayerResult]) -> tuple[int, int]:
+        return count_key(players, expected)
 
     best: list[PlayerResult] | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
@@ -291,7 +326,7 @@ def parse_image(image_b64: str) -> tuple[dict, list[str], list[list[int]]]:
         try:
             raw = ask_model(image_b64, temperature, prompt)
             log(f"  Antwort nach {time.time() - start:.0f}s: {json.dumps(raw, ensure_ascii=False)}")
-            players = check_players(raw["players"])
+            players = check_players(raw["players"], names)
         except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as e:
             log(f"  Unbrauchbare Antwort: {e!r}")
             continue
